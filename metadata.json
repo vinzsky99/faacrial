@@ -1,0 +1,8 @@
+{
+  "name": "Facrial",
+  "description": "Portal berita, artikel timeline selang-seling ala Facebook dengan floating navbar, tema light & dark, pengaturan transparansi, sinkronisasi Supabase, dan struktur Next.js lengkap.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
