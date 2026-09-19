@@ -1,255 +1,432 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Post, Agenda, VerifiedAuthor } from '../types';
-import { defaultPosts, defaultAgendas, defaultVerifiedAuthors } from '../data/defaultData';
+import { Post, Comment, VerifiedAuthor } from '../types';
+import { initialPosts } from '../data/initialData';
 
-const SUPABASE_CONFIG_KEY = 'facrial_supabase_config';
-const LOCAL_POSTS_KEY = 'facrial_local_posts';
-const LOCAL_AGENDAS_KEY = 'facrial_local_agendas';
-const LOCAL_AUTHORS_KEY = 'facrial_local_verified_authors';
+// Membaca URL dan Anon Key dari env (kompatibel Vite import.meta.env dan Next.js process.env)
+const envUrl = 
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
+  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SUPABASE_URL) ||
+  '';
 
-interface SupabaseConfig {
-  url: string;
-  anonKey: string;
-  connected: boolean;
-}
+const envKey = 
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
+  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY) ||
+  '';
 
-// Retrieve saved or env-based Supabase configuration
-export function getSupabaseConfig(): SupabaseConfig {
-  const saved = localStorage.getItem(SUPABASE_CONFIG_KEY);
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch {
-      // fallback
-    }
-  }
+export const isSupabaseConfigured = Boolean(envUrl && envKey && !envUrl.includes('your-project-id'));
 
-  const envUrl = (import.meta.env.VITE_SUPABASE_URL as string) || '';
-  const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || '';
+// Inisialisasi Supabase Client yang selalu siap digunakan (Safe fallback client untuk preview tanpa crash)
+export const supabase: SupabaseClient = isSupabaseConfigured
+  ? createClient(envUrl, envKey)
+  : createClient('https://facrial-hukum-politik.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy');
 
-  return {
-    url: envUrl,
-    anonKey: envKey,
-    connected: Boolean(envUrl && envKey)
-  };
-}
+// Local fallback state management agar demo aplikasi berjalan seketika (Zero-Setup Preview)
+const LOCAL_STORAGE_KEY = 'facrial_posts_hukum_politik_v5';
+const LOCAL_COMMENTS_KEY = 'facrial_comments_v2';
+const LOCAL_AUTHORS_KEY = 'facrial_verified_authors_v5';
 
-export function saveSupabaseConfig(url: string, anonKey: string): void {
-  const config: SupabaseConfig = {
-    url: url.trim(),
-    anonKey: anonKey.trim(),
-    connected: Boolean(url.trim() && anonKey.trim())
-  };
-  localStorage.setItem(SUPABASE_CONFIG_KEY, JSON.stringify(config));
-}
+const syncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
+  ? new BroadcastChannel('facrial_realtime_sync')
+  : null;
 
-let cachedClient: SupabaseClient | null = null;
+// Daftar author terverifikasi awal (Hukum & Politik Indonesia) dengan Profil Lengkap ala Facebook
+export const defaultVerifiedAuthors: VerifiedAuthor[] = [
+  {
+    id: 'auth-1',
+    email: 'fachrial.official2026@gmail.com',
+    name: 'Fachrial, S.H., M.H.',
+    role: 'Pemimpin Redaksi & Peneliti Hukum Tata Negara',
+    verified: true,
+    verifiedBy: 'Sistem Pusat Redaksi Facrial',
+    verifiedAt: '12 Januari 2026',
+    articlesCount: 5,
+    status: 'Aktif',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+    coverPhoto: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1600&q=80',
+    bio: 'Pemerhati konstitusi, penelusur dokumen Tragedi 1998, dan penganalisis regulasi politik nasional serta advokasi pemenuhan hak korban HAM.',
+    city: 'DKI Jakarta, Indonesia',
+    workplace: 'Lembaga Kajian Hukum Tata Negara & Redaksi Facrial',
+    education: 'Magister Hukum Tata Negara (M.H.), Universitas Indonesia',
+    ktaNumber: 'KTA-RED-001/JKT/2026',
+    socials: {
+      instagram: 'https://instagram.com/fachrial',
+      facebook: 'https://facebook.com/fachrial.official',
+      linkedin: 'https://linkedin.com/in/fachrial',
+      email: 'fachrial.official2026@gmail.com',
+    },
+  },
+  {
+    id: 'auth-2',
+    email: 'redaksi.investigasi@facrial.id',
+    name: 'Tim Advokasi & Riset HAM',
+    role: 'Author Verifikasi Dokumen & Sejarah',
+    verified: true,
+    verifiedBy: 'Fachrial, S.H., M.H.',
+    verifiedAt: '01 Februari 2026',
+    articlesCount: 8,
+    status: 'Aktif',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+    coverPhoto: 'https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=1600&q=80',
+    bio: 'Kolektif jurnalisme data mengkaji kronologi Trisakti, Semanggi, dan kebenaran peristiwa sejarah kemanusiaan Indonesia.',
+    city: 'Jakarta Pusat, Indonesia',
+    workplace: 'Pusat Dokumentasi HAM & Reformasi',
+    education: 'Kolektif Akademisi & Advokat Hak Asasi Manusia',
+    ktaNumber: 'KTA-INV-002/HAM/2026',
+    socials: {
+      instagram: 'https://instagram.com/fachrial',
+      facebook: 'https://facebook.com/fachrial.official',
+      linkedin: 'https://linkedin.com/in/fachrial',
+      email: 'redaksi.investigasi@facrial.id',
+    },
+  },
+  {
+    id: 'auth-3',
+    email: 'kontributor.hukum@facrial.id',
+    name: 'Dr. Hendra Wijaya, S.H.',
+    role: 'Pakar Hukum Pidana & Pengadilan HAM',
+    verified: true,
+    verifiedBy: 'Admin Redaksi Facrial',
+    verifiedAt: '18 Februari 2026',
+    articlesCount: 3,
+    status: 'Aktif',
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80',
+    coverPhoto: 'https://images.unsplash.com/photo-1505664194779-8beaceb93744?auto=format&fit=crop&w=1600&q=80',
+    bio: 'Akademisi hukum berfokus pada yurisprudensi kejahatan kemanusiaan, pembaruan KUHP, dan keadilan transisional.',
+    city: 'Bandung, Jawa Barat',
+    workplace: 'Fakultas Hukum Universitas Padjadjaran',
+    education: 'Doktor Ilmu Hukum Pidana (Dr. S.H.)',
+    ktaNumber: 'KTA-AKD-003/PID/2026',
+    socials: {
+      instagram: 'https://instagram.com/fachrial',
+      facebook: 'https://facebook.com/fachrial.official',
+      linkedin: 'https://linkedin.com/in/fachrial',
+      email: 'kontributor.hukum@facrial.id',
+    },
+  },
+];
 
-export function getSupabaseClient(): SupabaseClient | null {
-  const config = getSupabaseConfig();
-  if (!config.url || !config.anonKey) {
-    return null;
-  }
-
+// Helper membaca post tersimpan (dengan pembersihan tuntas jika ada sampah cache berita IT lama)
+export function getLocalPosts(): Post[] {
+  if (typeof window === 'undefined') return initialPosts;
   try {
-    if (!cachedClient) {
-      cachedClient = createClient(config.url, config.anonKey);
+    // Bersihkan key lama dari browser
+    ['facrial_posts_v1', 'facrial_posts_v2', 'facrial_posts_hukum_politik_v1', 'facrial_posts_hukum_politik_v2'].forEach((k) => {
+      try {
+        localStorage.removeItem(k);
+      } catch {}
+    });
+
+    const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (!stored) {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(initialPosts));
+      return initialPosts;
     }
-    return cachedClient;
+    const parsed: Post[] = JSON.parse(stored);
+
+    // Cek apakah ada berita IT lama yang menyusup
+    const containsOldIT = parsed.some(
+      (p: any) =>
+        p.category === 'Teknologi' ||
+        p.category === 'Design & UI/UX' ||
+        p.category === 'Pengumuman' ||
+        (typeof p.title === 'string' &&
+          (p.title.includes('Next.js') ||
+            p.title.includes('React 19') ||
+            p.title.includes('UI/UX') ||
+            p.title.includes('Tailwind CSS v4')))
+    );
+
+    if (containsOldIT || !Array.isArray(parsed) || parsed.length === 0) {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(initialPosts));
+      return initialPosts;
+    }
+    return parsed;
+  } catch {
+    return initialPosts;
+  }
+}
+
+// Helper menyimpan post
+export function saveLocalPosts(posts: Post[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(posts));
+    if (syncChannel) {
+      syncChannel.postMessage({ type: 'POSTS_UPDATED', payload: posts });
+    }
   } catch (err) {
-    console.warn('Supabase initialization failed:', err);
-    return null;
+    console.warn('Gagal menyimpan ke localStorage:', err);
   }
 }
 
-// Local persistence initializers
-export function getInitialPosts(): Post[] {
-  const saved = localStorage.getItem(LOCAL_POSTS_KEY);
-  if (saved) {
+// Mengambil seluruh postingan (Dengan integrasi Supabase / Realtime Fallback)
+export async function fetchAllPosts(): Promise<Post[]> {
+  if (isSupabaseConfigured) {
     try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .order('date', { ascending: false });
+
+      if (error) throw error;
+      if (data && data.length > 0) return data as Post[];
+    } catch (err) {
+      console.warn('Gagal menghubungi Supabase, beralih ke penyimpanan lokal:', err);
+    }
+  }
+  return getLocalPosts();
+}
+
+// Mengambil postingan berdasarkan slug
+export async function fetchPostBySlug(slug: string): Promise<Post | null> {
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('slug', slug)
+        .single();
+      if (!error && data) return data as Post;
+    } catch {
+      // Fallback
+    }
+  }
+  const local = getLocalPosts();
+  return local.find((p) => p.slug === slug) || null;
+}
+
+// Membuat postingan / agenda baru (Hukum & Politik Indonesia)
+export async function insertPost(newPost: Post): Promise<boolean> {
+  if (isSupabaseConfigured) {
+    try {
+      const { error } = await supabase.from('posts').insert([newPost]);
+      if (error) console.error('Supabase insert error:', error);
+    } catch (err) {
+      console.warn('Gagal insert ke Supabase, menyimpan lokal:', err);
+    }
+  }
+
+  const posts = getLocalPosts();
+  const updated = [newPost, ...posts];
+  saveLocalPosts(updated);
+  return true;
+}
+
+// Menambah like ke postingan
+export async function incrementPostLike(postId: string): Promise<number> {
+  const posts = getLocalPosts();
+  const index = posts.findIndex((p) => p.id === postId);
+  if (index === -1) return 0;
+  
+  posts[index].likes += 1;
+  saveLocalPosts(posts);
+
+  if (isSupabaseConfigured) {
+    try {
+      await supabase
+        .from('posts')
+        .update({ likes: posts[index].likes })
+        .eq('id', postId);
+    } catch {
+      // Ignore
+    }
+  }
+  return posts[index].likes;
+}
+
+// Komentar
+export function getCommentsForPost(postId: string): Comment[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(LOCAL_COMMENTS_KEY);
+    const allComments: Comment[] = raw ? JSON.parse(raw) : [];
+    return allComments.filter((c) => c.postId === postId);
+  } catch {
+    return [];
+  }
+}
+
+export function saveComment(comment: Comment): Comment[] {
+  if (typeof window === 'undefined') return [comment];
+  try {
+    const raw = localStorage.getItem(LOCAL_COMMENTS_KEY);
+    const allComments: Comment[] = raw ? JSON.parse(raw) : [];
+    const updated = [comment, ...allComments];
+    localStorage.setItem(LOCAL_COMMENTS_KEY, JSON.stringify(updated));
+    return updated.filter((c) => c.postId === comment.postId);
+  } catch {
+    return [comment];
+  }
+}
+
+// =========================================================================
+// FITUR AUTHOR VERIFIKASI EMAIL KE DATABASE SUPABASE OTOMATIS
+// =========================================================================
+
+// Mengambil seluruh author yang telah diverifikasi
+export async function getVerifiedAuthors(): Promise<VerifiedAuthor[]> {
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('verified_authors')
+        .select('*')
+        .order('verified_at', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        return data as VerifiedAuthor[];
+      }
+    } catch (err) {
+      console.warn('Gagal membaca verified_authors dari Supabase:', err);
+    }
+  }
+
+  // Local storage fallback
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem(LOCAL_AUTHORS_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+      localStorage.setItem(LOCAL_AUTHORS_KEY, JSON.stringify(defaultVerifiedAuthors));
     } catch {
       // fallback
     }
   }
-  localStorage.setItem(LOCAL_POSTS_KEY, JSON.stringify(defaultPosts));
-  return defaultPosts;
-}
-
-export function savePostsToStorage(posts: Post[]): void {
-  localStorage.setItem(LOCAL_POSTS_KEY, JSON.stringify(posts));
-}
-
-export function getInitialAgendas(): Agenda[] {
-  const saved = localStorage.getItem(LOCAL_AGENDAS_KEY);
-  if (saved) {
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    } catch {
-      // fallback
-    }
-  }
-  localStorage.setItem(LOCAL_AGENDAS_KEY, JSON.stringify(defaultAgendas));
-  return defaultAgendas;
-}
-
-export function saveAgendasToStorage(agendas: Agenda[]): void {
-  localStorage.setItem(LOCAL_AGENDAS_KEY, JSON.stringify(agendas));
-}
-
-export function getInitialVerifiedAuthors(): VerifiedAuthor[] {
-  const saved = localStorage.getItem(LOCAL_AUTHORS_KEY);
-  if (saved) {
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    } catch {
-      // fallback
-    }
-  }
-  localStorage.setItem(LOCAL_AUTHORS_KEY, JSON.stringify(defaultVerifiedAuthors));
   return defaultVerifiedAuthors;
 }
 
-export function saveVerifiedAuthorsToStorage(authors: VerifiedAuthor[]): void {
-  localStorage.setItem(LOCAL_AUTHORS_KEY, JSON.stringify(authors));
-}
-
-/**
- * Automatically sync verified author into Supabase database table
- */
-export async function syncAuthorToSupabase(author: VerifiedAuthor): Promise<{ success: boolean; error?: string }> {
-  const client = getSupabaseClient();
-  if (!client) {
-    // Stored safely locally
-    return { success: true };
-  }
-
-  try {
-    const { error } = await client
-      .from('verified_authors')
-      .upsert({
-        id: author.id,
-        name: author.name,
-        email: author.email,
-        role: author.role,
-        avatar: author.avatar,
-        bio: author.bio,
-        institution: author.institution || '',
-        verified_by_email: author.verifiedByEmail,
-        verified_at: author.verifiedAt,
-        verification_code: author.verificationCode || '',
-        status: author.status,
-        posts_count: author.postsCount || 0
-      }, { onConflict: 'id' });
-
-    if (error) {
-      console.warn('Supabase author sync note:', error.message);
-      return { success: false, error: error.message };
+// Memverifikasi atau mendaftarkan author baru via email (masuk database Supabase otomatis)
+export async function verifyAndSaveAuthor(newAuthor: VerifiedAuthor): Promise<VerifiedAuthor[]> {
+  // 1. Kirim otomatis ke Supabase database jika terkoneksi
+  if (isSupabaseConfigured) {
+    try {
+      const { error } = await supabase.from('verified_authors').upsert([
+        {
+          id: newAuthor.id,
+          email: newAuthor.email.toLowerCase().trim(),
+          name: newAuthor.name,
+          role: newAuthor.role,
+          verified: true,
+          verified_by: newAuthor.verifiedBy,
+          verified_at: newAuthor.verifiedAt,
+          articles_count: newAuthor.articlesCount || 0,
+          status: newAuthor.status || 'Aktif',
+          avatar: newAuthor.avatar,
+          cover_photo: newAuthor.coverPhoto,
+          bio: newAuthor.bio,
+          city: newAuthor.city,
+          workplace: newAuthor.workplace,
+          education: newAuthor.education,
+          kta_number: newAuthor.ktaNumber,
+        },
+      ]);
+      if (error) {
+        console.warn('Supabase upsert author notice:', error.message);
+      }
+    } catch (err) {
+      console.warn('Supabase author upsert error, fallback to local:', err);
     }
-    return { success: true };
-  } catch (err: any) {
-    console.warn('Supabase sync exception:', err);
-    return { success: false, error: err?.message || 'Gagal tersambung' };
   }
+
+  // 2. Simpan ke local storage agar seketika aktif
+  const currentAuthors = await getVerifiedAuthors();
+  const existingIdx = currentAuthors.findIndex(
+    (a) => a.email.toLowerCase() === newAuthor.email.toLowerCase()
+  );
+
+  let updated: VerifiedAuthor[];
+  if (existingIdx >= 0) {
+    updated = [...currentAuthors];
+    updated[existingIdx] = { ...updated[existingIdx], ...newAuthor, verified: true };
+  } else {
+    updated = [newAuthor, ...currentAuthors];
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_AUTHORS_KEY, JSON.stringify(updated));
+      if (syncChannel) {
+        syncChannel.postMessage({ type: 'AUTHORS_UPDATED', payload: updated });
+      }
+    } catch (err) {
+      console.warn('Error saving local author:', err);
+    }
+  }
+
+  return updated;
 }
 
-/**
- * SQL Schema definition for users to copy/paste into Supabase SQL Editor
- */
-export const SUPABASE_SQL_SCHEMA = `-- ==========================================
--- SKEMA DATABASE FACRIAL SUPABASE (PostgreSQL)
--- Jalankan di: Supabase Dashboard > SQL Editor
--- ==========================================
+// Update Profil Author / Admin Terverifikasi (Facebook Profile style)
+export async function updateAuthorProfile(updatedData: Partial<VerifiedAuthor> & { id: string }): Promise<VerifiedAuthor | null> {
+  const currentAuthors = await getVerifiedAuthors();
+  const idx = currentAuthors.findIndex((a) => a.id === updatedData.id || (updatedData.email && a.email.toLowerCase() === updatedData.email.toLowerCase()));
 
--- 1. Buat Tabel Postingan Blog & Berita
-CREATE TABLE IF NOT EXISTS posts (
-    id TEXT PRIMARY KEY,
-    slug TEXT UNIQUE NOT NULL,
-    title TEXT NOT NULL,
-    excerpt TEXT,
-    content TEXT NOT NULL,
-    category TEXT NOT NULL,
-    tags TEXT[] DEFAULT '{}',
-    cover_images TEXT[] DEFAULT '{}',
-    author_name TEXT NOT NULL DEFAULT 'Fachrial',
-    author_role TEXT DEFAULT 'Software Engineer & Writer',
-    author_avatar TEXT,
-    likes INTEGER DEFAULT 0,
-    comments_count INTEGER DEFAULT 0,
-    views INTEGER DEFAULT 0,
-    reading_time_minutes INTEGER DEFAULT 5,
-    attachments JSONB DEFAULT '[]',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    published_at_display TEXT
-);
+  if (idx === -1) return null;
 
--- 2. Buat Tabel Agenda Kegiatan
-CREATE TABLE IF NOT EXISTS agendas (
-    id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    date TEXT NOT NULL,
-    time TEXT NOT NULL,
-    location TEXT NOT NULL,
-    category TEXT NOT NULL,
-    description TEXT,
-    status TEXT DEFAULT 'Mendatang',
-    author TEXT DEFAULT 'Fachrial',
-    link TEXT,
-    cover_image TEXT,
-    attachments JSONB DEFAULT '[]',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+  const merged: VerifiedAuthor = {
+    ...currentAuthors[idx],
+    ...updatedData,
+  };
 
--- 3. Buat Tabel Author Terverifikasi via Email oleh Admin
-CREATE TABLE IF NOT EXISTS verified_authors (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    role TEXT NOT NULL,
-    avatar TEXT,
-    bio TEXT,
-    institution TEXT,
-    verified_by_email BOOLEAN DEFAULT true,
-    verified_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    verification_code TEXT,
-    status TEXT DEFAULT 'verified',
-    posts_count INTEGER DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+  const updatedList = [...currentAuthors];
+  updatedList[idx] = merged;
 
--- 4. Buat Tabel Komentar Artikel
-CREATE TABLE IF NOT EXISTS comments (
-    id TEXT PRIMARY KEY,
-    post_id TEXT REFERENCES posts(id) ON DELETE CASCADE,
-    author_name TEXT NOT NULL,
-    author_email TEXT,
-    text TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_AUTHORS_KEY, JSON.stringify(updatedList));
+      if (syncChannel) {
+        syncChannel.postMessage({ type: 'AUTHORS_UPDATED', payload: updatedList });
+      }
+    } catch (err) {
+      console.warn('Error updating author profile locally:', err);
+    }
+  }
 
--- 5. Aktifkan Row Level Security (RLS) untuk perlindungan data
-ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE agendas ENABLE ROW LEVEL SECURITY;
-ALTER TABLE verified_authors ENABLE ROW LEVEL SECURITY;
-ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
+  if (isSupabaseConfigured) {
+    try {
+      await supabase.from('verified_authors').upsert([
+        {
+          id: merged.id,
+          email: merged.email,
+          name: merged.name,
+          role: merged.role,
+          avatar: merged.avatar,
+          cover_photo: merged.coverPhoto,
+          bio: merged.bio,
+          city: merged.city,
+          workplace: merged.workplace,
+          education: merged.education,
+          kta_number: merged.ktaNumber,
+        },
+      ]);
+    } catch {
+      // ignore
+    }
+  }
 
--- 6. Buat Kebijakan Akses Baca Publik
-CREATE POLICY "Public Read Posts" ON posts FOR SELECT USING (true);
-CREATE POLICY "Public Read Agendas" ON agendas FOR SELECT USING (true);
-CREATE POLICY "Public Read Verified Authors" ON verified_authors FOR SELECT USING (true);
-CREATE POLICY "Public Read Comments" ON comments FOR SELECT USING (true);
+  return merged;
+}
 
--- 7. Kebijakan Tambah & Update Data
-CREATE POLICY "Public Insert Posts" ON posts FOR INSERT WITH CHECK (true);
-CREATE POLICY "Public Insert Agendas" ON agendas FOR INSERT WITH CHECK (true);
-CREATE POLICY "Public Insert & Update Verified Authors" ON verified_authors FOR ALL USING (true);
-CREATE POLICY "Public Insert Comments" ON comments FOR INSERT WITH CHECK (true);
+// Verifikasi kredensial email author/admin
+export async function checkAuthorVerification(email: string): Promise<VerifiedAuthor | null> {
+  const cleanEmail = email.toLowerCase().trim();
+  
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('verified_authors')
+        .select('*')
+        .eq('email', cleanEmail)
+        .eq('verified', true)
+        .single();
+      if (!error && data) return data as VerifiedAuthor;
+    } catch {
+      // fallback
+    }
+  }
 
--- 8. Aktifkan Fitur Realtime Publication
-ALTER PUBLICATION supabase_realtime ADD TABLE posts;
-ALTER PUBLICATION supabase_realtime ADD TABLE agendas;
-ALTER PUBLICATION supabase_realtime ADD TABLE verified_authors;
-`;
+  const authors = await getVerifiedAuthors();
+  const found = authors.find((a) => a.email.toLowerCase() === cleanEmail && a.verified);
+  return found || null;
+}
+

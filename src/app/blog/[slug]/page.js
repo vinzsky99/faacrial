@@ -1,6 +1,6 @@
 // Facrial - Next.js Detail Artikel Blog dalam bentuk Timeline
 import { notFound } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '../../lib/supabase';
 import AuthorCard from './author';
 
 export async function generateStaticParams() {

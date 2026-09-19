@@ -1,5 +1,5 @@
 // Facrial - Next.js Home Page (Daftar semua blog timeline Facebook selang-seling & cover slider)
-import { supabase } from '@/lib/supabase';
+import { supabase } from '../lib/supabase';
 
 // Mengambil data artikel secara realtime / server-rendered dengan aman
 async function getPosts() {

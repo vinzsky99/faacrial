@@ -1,210 +1,270 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Compass,
   Target,
-  Sparkles,
+  Scale,
   ShieldCheck,
-  Code2,
-  Users,
-  Lightbulb,
-  ArrowRight,
+  ArrowLeft,
   CheckCircle2,
-  Mail,
-  Building,
-  Database
+  BookOpen,
+  Users,
+  Award,
+  FileText,
+  AlertTriangle,
+  History,
+  Landmark,
+  Gavel
 } from 'lucide-react';
-import { defaultVisiMisi, defaultAuthor } from '../data/defaultData';
-import { ActiveTab, VerifiedAuthor } from '../types';
+import { ThemeConfig } from '../types';
 
 interface VisiMisiViewProps {
-  setCurrentTab: (tab: ActiveTab) => void;
-  verifiedAuthors?: VerifiedAuthor[];
-  transparency: number;
-  isDark: boolean;
+  themeConfig: ThemeConfig;
+  onBack: () => void;
 }
 
-export const VisiMisiView: React.FC<VisiMisiViewProps> = ({
-  setCurrentTab,
-  verifiedAuthors = [],
-  transparency,
-  isDark
-}) => {
-  const alpha = Math.min(Math.max(transparency / 100, 0.3), 0.95);
+export const VisiMisiView: React.FC<VisiMisiViewProps> = ({ themeConfig, onBack }) => {
+  const [activePillar, setActivePillar] = useState<number>(0);
+
+  const pillars = [
+    {
+      title: 'Pengungkapan Fakta Sejarah & Rekonsiliasi Nasional',
+      icon: History,
+      desc: 'Membuka tabir fakta otentik dan arsip historis tragedi kemanusiaan bangsa, termasuk Peristiwa 1965/G30S, Tragedi Trisakti, Kerusuhan Mei 1998, serta penculikan aktivis pro-demokrasi demi keadilan para korban dan rekonsiliasi kebangsaan yang bermartabat.',
+      actions: [
+        'Deklasifikasi arsip dokumen investigasi dan laporan TGPF (Tim Gabungan Pencari Fakta)',
+        'Advokasi pengakuan resmi negara terhadap pelanggaran HAM berat masa lalu',
+        'Dokumentasi lisan para saksi kunci dan keluarga korban rezim otoritarian'
+      ]
+    },
+    {
+      title: 'Pengawalan Konstitusionalitas & Independensi Peradilan',
+      icon: Scale,
+      desc: 'Mengawal kemurnian putusan Mahkamah Konstitusi (MK) dan Mahkamah Agung (MA) agar terbebas dari intervensi kekuasaan eksekutif, konflik kepentingan dinasti politik, dan rekayasa legislasi yang melemahkan sendi-sendi negara hukum (Rechtsstaat).',
+      actions: [
+        'Eksaminasi publik berkala terhadap pengujian undang-undang dan sengketa pemilu',
+        'Pemberantasan mafia peradilan dan korupsi politik di lembaga yudikatif',
+        'Penegakan prinsip *Checks and Balances* ketatanegaraan secara proporsional'
+      ]
+    },
+    {
+      title: 'Literasi Hukum Kritis & Pertahanan Demokrasi Warga',
+      icon: Landmark,
+      desc: 'Membangun kesadaran hukum masyarakat sipil agar mampu membela hak konstitusionalnya di hadapan kesewenang-wenangan aparat, menolak represi kebebasan berekspresi, serta mengikis oligarki yang membajak institusi kenegaraan.',
+      actions: [
+        'Publikasi panduan bantuan hukum cuma-cuma dan hak korban kriminalisasi',
+        'Diseminasi ulasan hukum bahasa lugas bagi generasi muda dan mahasiswa',
+        'Monitoring kebijakan publik dan rancangan regulasi bermasalah secara transparan'
+      ]
+    },
+    {
+      title: 'Wadah Jurnalisme Investigasi Independen Terverifikasi',
+      icon: ShieldCheck,
+      desc: 'Menjadi benteng jurnalisme hukum yang tidak dapat disuap, menyajikan data terverifikasi dengan metodologi investigasi mendalam, serta menjamin keselamatan dan integritas para author terverifikasi resmi.',
+      actions: [
+        'Standar verifikasi ketat berbasis KTA Redaksi dan rekam jejak riset akademik',
+        'Perlindungan data narasumber melalui protokol enkripsi dan keamanan digital anti-XSS',
+        'Publikasi laporan berani tanpa intervensi konglomerasi media manapun'
+      ]
+    }
+  ];
 
   return (
-    <div className="w-full pb-20 pt-20">
-      {/* Header */}
-      <div className="mb-10 text-center max-w-3xl mx-auto">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 text-blue-500 text-xs font-bold uppercase tracking-wider mb-3">
-          <Compass className="w-3.5 h-3.5" />
-          <span>Visi & Misi Resmi</span>
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 animate-in fade-in duration-300 pb-16">
+      {/* Tombol Kembali ke Linimasa */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-200/60 dark:bg-slate-800/60 hover-light-glow transition-all"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Kembali ke Linimasa Berita</span>
+        </button>
+
+        <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+          Manifesto Hukum & Politik
+        </span>
+      </div>
+
+      {/* Header Utama Visi & Misi */}
+      <div
+        className={`p-6 sm:p-12 rounded-3xl border shadow-xl text-center space-y-4 relative overflow-hidden ${
+          themeConfig.mode === 'dark'
+            ? 'bg-slate-900/90 border-slate-800'
+            : 'bg-white border-slate-200'
+        }`}
+      >
+        <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-tr from-blue-700 via-indigo-700 to-sky-600 flex items-center justify-center text-white shadow-xl shadow-blue-500/30">
+          <Scale className="w-8 h-8" />
         </div>
-        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-          Arah Langkah & Komitmen Facrial
+
+        <span className="px-3.5 py-1 text-xs font-extrabold rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 uppercase tracking-widest">
+          Fondasi Nilai Redaksi Facrial 2026
+        </span>
+
+        <h1 className="text-2xl sm:text-4xl font-extrabold font-heading text-slate-900 dark:text-white leading-tight">
+          Visi & Misi Penegakan Hukum, Politik & Kebenaran Sejarah
         </h1>
-        <p className="text-sm sm:text-base opacity-70 mt-2 leading-relaxed">
-          Membangun masa depan digital yang aman, transparan, dan berdaya guna melalui keterbukaan pengetahuan serta rekayasa perangkat lunak modern.
+
+        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-3xl mx-auto leading-relaxed">
+          Facrial berdiri sebagai benteng nurani bangsa dan platform jurnalisme investigasi yang menguak fakta hukum di balik tragedi politik nasional, mengawal supremasi konstitusi, serta menuntut akuntabilitas negara demi masa depan demokrasi Indonesia yang adil.
         </p>
       </div>
 
-      {/* Main Visi Card */}
+      {/* Visi Utama */}
       <div
-        style={{
-          backgroundColor: isDark
-            ? `rgba(15, 23, 42, ${alpha})`
-            : `rgba(255, 255, 255, ${alpha})`,
-          backdropFilter: `blur(${Math.max(6, transparency / 8)}px)`
-        }}
-        className={`p-8 sm:p-12 rounded-3xl border mb-10 shadow-2xl transition-all duration-300 ${
-          isDark ? 'border-slate-800 text-slate-100 shadow-black/50' : 'border-slate-200 text-slate-800 shadow-slate-200/70'
+        className={`p-6 sm:p-8 rounded-3xl border shadow-lg space-y-4 ${
+          themeConfig.mode === 'dark'
+            ? 'bg-slate-900/85 border-slate-800'
+            : 'bg-white border-slate-200'
         }`}
       >
-        <div className="flex items-center gap-3 text-blue-500 font-bold text-sm uppercase tracking-wider mb-4">
-          <Target className="w-5 h-5" />
-          <span>Visi Utama</span>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md">
+            <Target className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-lg sm:text-xl font-bold font-heading text-slate-900 dark:text-white">
+              Visi Luhur Redaksi
+            </h2>
+            <p className="text-xs text-slate-400">Prinsip dasar yang menuntun setiap tinta investigasi kami</p>
+          </div>
         </div>
-        <blockquote className="text-xl sm:text-2xl md:text-3xl font-bold leading-relaxed tracking-tight text-slate-900 dark:text-slate-100">
-          &ldquo;{defaultVisiMisi.visi}&rdquo;
+
+        <blockquote className="p-5 rounded-2xl bg-blue-500/5 border-l-4 border-blue-600 text-sm sm:text-base text-slate-800 dark:text-slate-200 font-medium leading-relaxed italic">
+          "Menjadi pilar kebenaran hukum dan politik terdepan di Indonesia yang berani membongkar kejahatan masa lalu yang terbungkam, mengawal integritas konstitusi dari ancaman otoritarianisme baru, serta mengembalikan kedaulatan hukum substantif kepada seluruh rakyat."
         </blockquote>
       </div>
 
-      {/* 4 Misi Cards Grid */}
-      <div className="mb-12">
-        <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-          <Lightbulb className="w-5 h-5 text-amber-500" />
-          <span>4 Pilar Misi Strategis</span>
-        </h2>
+      {/* Empat Pilar Misi Interaktif */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-base font-bold font-heading text-slate-900 dark:text-white flex items-center gap-2">
+            <Gavel className="w-5 h-5 text-blue-500" />
+            Empat Pilar Misi Perjuangan Redaksi
+          </h3>
+          <span className="text-xs text-slate-400">Pilih pilar untuk rincian strategi</span>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {defaultVisiMisi.misi.map((m, idx) => {
-            const icons = [Code2, ShieldCheck, Sparkles, Users];
-            const Icon = icons[idx % icons.length];
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {pillars.map((pillar, idx) => {
+            const Icon = pillar.icon;
+            const isSelected = activePillar === idx;
             return (
-              <div
-                key={m.id}
-                style={{
-                  backgroundColor: isDark
-                    ? `rgba(15, 23, 42, ${alpha})`
-                    : `rgba(255, 255, 255, ${alpha})`,
-                  backdropFilter: `blur(${Math.max(6, transparency / 8)}px)`
-                }}
-                className={`p-6 sm:p-8 rounded-3xl border transition-all duration-300 shadow-lg ${
-                  isDark ? 'border-slate-800 text-slate-100' : 'border-slate-200 text-slate-800'
-                } hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] group`}
+              <button
+                key={idx}
+                onClick={() => setActivePillar(idx)}
+                className={`p-4 rounded-2xl border text-left transition-all ${
+                  isSelected
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-500/25 scale-[1.02]'
+                    : themeConfig.mode === 'dark'
+                    ? 'bg-slate-900/80 border-slate-800 text-slate-300 hover:bg-slate-800'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
               >
-                <div className="w-12 h-12 rounded-2xl bg-blue-600/10 text-blue-500 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <Icon className="w-6 h-6" />
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center mb-3 ${
+                  isSelected ? 'bg-white/20 text-white' : 'bg-blue-500/10 text-blue-500'
+                }`}>
+                  <Icon className="w-4 h-4" />
                 </div>
-                <h3 className="text-lg font-bold mb-2 group-hover:text-blue-500 transition-colors">
-                  {m.title}
-                </h3>
-                <p className="text-sm opacity-80 leading-relaxed">
-                  {m.desc}
-                </p>
-              </div>
+                <h4 className="text-xs font-bold font-heading line-clamp-2">
+                  {pillar.title}
+                </h4>
+              </button>
             );
           })}
         </div>
+
+        {/* Konten Rincian Pilar yang Aktif */}
+        <div
+          className={`p-6 sm:p-8 rounded-3xl border shadow-md space-y-4 animate-in fade-in duration-200 ${
+            themeConfig.mode === 'dark'
+              ? 'bg-slate-900/90 border-slate-800'
+              : 'bg-white border-slate-200'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center">
+              {React.createElement(pillars[activePillar].icon, { className: 'w-5 h-5' })}
+            </div>
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-blue-500">
+                Pilar #{activePillar + 1}
+              </span>
+              <h4 className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-white">
+                {pillars[activePillar].title}
+              </h4>
+            </div>
+          </div>
+
+          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+            {pillars[activePillar].desc}
+          </p>
+
+          <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+            <h5 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Langkah Nyata & Agenda Penegakan:
+            </h5>
+            <div className="grid grid-cols-1 gap-2">
+              {pillars[activePillar].actions.map((act, i) => (
+                <div key={i} className="flex items-start gap-2.5 text-xs text-slate-700 dark:text-slate-300">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <span>{act}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Verified Authors Section */}
-      {verifiedAuthors.length > 0 && (
-        <div className="mb-12">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-xl font-bold flex items-center gap-2">
-                <Users className="w-5 h-5 text-blue-500" />
-                <span>Dewan Penulis & Author Terverifikasi</span>
-              </h2>
-              <p className="text-xs opacity-70 mt-1">
-                Para kontributor dan penulis resmi yang telah melalui verifikasi email oleh admin serta terintegrasi langsung dengan database Supabase.
-              </p>
-            </div>
-            <span className="hidden sm:flex items-center gap-1 text-xs text-emerald-500 font-semibold bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
-              <Database className="w-3.5 h-3.5" />
-              <span>Database Terverifikasi</span>
+      {/* Nilai Utama Redaksi (Core Values) */}
+      <div
+        className={`p-6 sm:p-8 rounded-3xl border shadow-md space-y-4 ${
+          themeConfig.mode === 'dark'
+            ? 'bg-slate-900/80 border-slate-800'
+            : 'bg-white border-slate-200'
+        }`}
+      >
+        <h3 className="text-base font-bold font-heading text-slate-900 dark:text-white">
+          Nilai Pokok Kode Etik Investigasi Facrial
+        </h3>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-2">
+          <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10 space-y-1.5">
+            <span className="text-xs font-black text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+              1. Veritas (Kebenaran)
             </span>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Setiap kutipan, angka korban, dan kronologi didasarkan pada dokumen primer dan uji forensik sejarah.
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {verifiedAuthors.map((author) => (
-              <div
-                key={author.id}
-                style={{
-                  backgroundColor: isDark
-                    ? `rgba(15, 23, 42, ${alpha})`
-                    : `rgba(255, 255, 255, ${alpha})`,
-                  backdropFilter: `blur(${Math.max(6, transparency / 8)}px)`
-                }}
-                className={`p-5 rounded-3xl border transition-all duration-300 shadow-md ${
-                  isDark ? 'border-slate-800 text-slate-100' : 'border-slate-200 text-slate-800'
-                } hover:shadow-[0_0_16px_rgba(59,130,246,0.3)] flex items-start gap-4`}
-              >
-                <div className="relative shrink-0">
-                  <img
-                    src={author.avatar}
-                    alt={author.name}
-                    className="w-14 h-14 rounded-2xl object-cover border-2 border-blue-500/40"
-                  />
-                  <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-blue-600 text-white shadow-sm" title="Terverifikasi Resmi">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                  </div>
-                </div>
+          <div className="p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/10 space-y-1.5">
+            <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+              2. Iustitia (Keadilan)
+            </span>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Berpihak tanpa kompromi kepada korban pelanggaran HAM dan masyarakat yang dirugikan oleh kebijakan korup.
+            </p>
+          </div>
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <h3 className="font-bold text-sm truncate">{author.name}</h3>
-                    <span className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-600 dark:text-blue-400 text-[10px] font-bold flex items-center gap-0.5">
-                      <CheckCircle2 className="w-2.5 h-2.5" />
-                      <span>Email Verified</span>
-                    </span>
-                  </div>
+          <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/10 space-y-1.5">
+            <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+              3. Integritas (Bebas Tekanan)
+            </span>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Menolak tunduk pada kekuasaan eksekutif, sponsor politik partisan, ataupun hegemoni konglomerat.
+            </p>
+          </div>
 
-                  <p className="text-xs text-blue-600 dark:text-blue-400 font-medium mt-0.5">
-                    {author.role}
-                  </p>
-
-                  {author.institution && (
-                    <div className="text-[11px] opacity-70 flex items-center gap-1 mt-0.5">
-                      <Building className="w-3 h-3 text-slate-400" />
-                      <span>{author.institution}</span>
-                    </div>
-                  )}
-
-                  {author.bio && (
-                    <p className="text-xs opacity-75 mt-2 line-clamp-2 italic">
-                      &ldquo;{author.bio}&rdquo;
-                    </p>
-                  )}
-
-                  <div className="mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between text-[10px] opacity-60 font-mono">
-                    <span>{author.verificationCode || 'VRF-FACRIAL-2026'}</span>
-                    <span className="flex items-center gap-1 text-emerald-500">
-                      <CheckCircle2 className="w-2.5 h-2.5" />
-                      <span>Supabase Synced</span>
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="p-4 rounded-2xl bg-purple-500/5 border border-purple-500/10 space-y-1.5">
+            <span className="text-xs font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider">
+              4. Humanitas (Kemanusiaan)
+            </span>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Menjunjung tinggi harkat martabat manusia sebagai fondasi tertinggi dalam konstitusi Republik Indonesia.
+            </p>
           </div>
         </div>
-      )}
-
-      {/* Call to action */}
-      <div className="p-8 rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex flex-col sm:flex-row items-center justify-between gap-6 shadow-2xl shadow-blue-600/30">
-        <div>
-          <h3 className="text-2xl font-bold">Mari Berkolaborasi Bersama</h3>
-          <p className="text-sm text-blue-100 mt-1 max-w-xl">
-            Punya gagasan artikel, usulan agenda riset, atau proyek open source? Hubungi Fachrial untuk kolaborasi langsung.
-          </p>
-        </div>
-        <button
-          onClick={() => setCurrentTab('home')}
-          className="px-6 py-3 rounded-2xl bg-white text-blue-600 font-bold text-sm hover:bg-blue-50 transition-all hover:shadow-[0_0_15px_rgba(255,255,255,0.5)] active:scale-95 cursor-pointer whitespace-nowrap"
-        >
-          Jelajahi Beranda
-        </button>
       </div>
     </div>
   );

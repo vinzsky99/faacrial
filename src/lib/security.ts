@@ -1,106 +1,107 @@
 /**
- * Security utilities to sanitize inputs against Cross-Site Scripting (XSS)
- * and prevent SQL Injection patterns when querying or inserting data.
+ * Modul Keamanan Facrial: Anti-XSS & SQL Injection Sanitizer
+ * Dirancang untuk mengamankan input pencarian, pembuatan postingan, komentar, dan render konten.
  */
 
-// HTML entity map for escaping dangerous characters
-const HTML_ESCAPE_MAP: Record<string, string> = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#x27;',
-  '/': '&#x2F;',
-  '`': '&#x60;',
-  '=': '&#x3D;'
-};
-
-/**
- * Strips script tags, inline event handlers (onload, onerror, onclick),
- * and escapes dangerous characters to prevent XSS.
- */
-export function sanitizeInput(input: string): string {
-  if (!input || typeof input !== 'string') return '';
-
-  // 1. Remove dangerous javascript: protocols
-  let clean = input.replace(/javascript\s*:/gi, '');
-
-  // 2. Remove script and iframe tags entirely
-  clean = clean.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-  clean = clean.replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '');
-
-  // 3. Remove inline event handlers like onerror=..., onload=...
-  clean = clean.replace(/on\w+\s*=\s*["'][^"']*["']/gi, '');
-  clean = clean.replace(/on\w+\s*=\s*[^>\s]+/gi, '');
-
-  // 4. Strip dangerous characters or return clean string
-  return clean.trim();
+// Menghindari serangan Cross-Site Scripting (XSS) dengan encoding entitas HTML
+export function sanitizeText(input: string): string {
+  if (!input) return '';
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/\//g, '&#x2F;');
 }
 
-/**
- * Escapes characters for safe HTML rendering if needed
- */
-export function escapeHtml(str: string): string {
-  if (!str) return '';
-  return str.replace(/[&<>"'`=\/]/g, (s) => HTML_ESCAPE_MAP[s] || s);
-}
-
-/**
- * Checks for known SQL Injection patterns in search queries or input fields.
- * If detected, neutralizes or rejects the pattern.
- */
-export function sanitizeSqlQuery(query: string): { safeQuery: string; hadSuspiciousPattern: boolean } {
-  if (!query || typeof query !== 'string') return { safeQuery: '', hadSuspiciousPattern: false };
-
-  // Common SQL injection indicators: union select, 1=1, drop table, comments --, exec, xp_
-  const sqlInjectionPattern = /(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|EXEC|EXECUTE)\b|--|\/\*|\*\/|;|'|\bOR\b\s+\d+=\d+|\bAND\b\s+\d+=\d+)/i;
-
-  const hadSuspiciousPattern = sqlInjectionPattern.test(query);
-
-  // Clean query by removing typical SQL punctuation and quotes
-  let safeQuery = query
-    .replace(/['";\-\-\/\*]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return {
-    safeQuery,
-    hadSuspiciousPattern
-  };
-}
-
-/**
- * Converts a string into a clean, URL-safe slug
- */
-export function slugify(text: string): string {
-  return text
-    .toString()
-    .toLowerCase()
+// Sanitasi query pencarian dari karakter berbahaya
+export function sanitizeSearchQuery(query: string): string {
+  if (!query) return '';
+  // Menghilangkan script tags, SQL injection fragments, dan simbol berbahaya
+  return query
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/['";\-\-]/g, '')
     .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
+    .slice(0, 100); // Batasi panjang query maksimal 100 karakter
 }
 
-/**
- * Formats Indonesian date representation
- */
-export function formatIndonesianDate(date: Date = new Date()): string {
-  const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-  const months = [
-    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+// Sanitasi link/URL untuk mencegah 'javascript:' pseudo-protocol XSS
+export function sanitizeUrl(url: string): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+  if (
+    trimmed.startsWith('javascript:') ||
+    trimmed.startsWith('data:') ||
+    trimmed.startsWith('vbscript:')
+  ) {
+    return '#';
+  }
+  return trimmed;
+}
+
+// Deteksi serangan Cross-Site Scripting (XSS) secara ketat untuk memblokir input komentar berbahaya
+export interface XSSCheckResult {
+  isMalicious: boolean;
+  detectedPattern?: string;
+  reason?: string;
+}
+
+export function detectXSS(input: string): XSSCheckResult {
+  if (!input || typeof input !== 'string') {
+    return { isMalicious: false };
+  }
+
+  const normalized = input.toLowerCase();
+
+  // Pola regex serangan skrip XSS
+  const maliciousPatterns: { regex: RegExp; name: string }[] = [
+    { regex: /<script[\s\S]*?>[\s\S]*?<\/script>/gi, name: 'Tag <script>' },
+    { regex: /<script\b/gi, name: 'Pembuka tag <script>' },
+    { regex: /javascript\s*:/gi, name: 'Protokol javascript:' },
+    { regex: /vbscript\s*:/gi, name: 'Protokol vbscript:' },
+    { regex: /data\s*:\s*text\/html/gi, name: 'data:text/html payload' },
+    { regex: /on(error|load|click|mouseover|focus|blur|change|submit|keydown|keyup)\s*=/gi, name: 'Inline Event Handler (on*=' },
+    { regex: /<iframe[\s\S]*?>/gi, name: 'Tag <iframe' },
+    { regex: /<object[\s\S]*?>/gi, name: 'Tag <object' },
+    { regex: /<embed[\s\S]*?>/gi, name: 'Tag <embed' },
+    { regex: /<applet[\s\S]*?>/gi, name: 'Tag <applet' },
+    { regex: /<svg[\s\S]*?onload/gi, name: 'SVG onload script injection' },
+    { regex: /<img[\s\S]*?onerror/gi, name: 'Image onerror script injection' },
+    { regex: /eval\s*\(/gi, name: 'Fungsi eval()' },
+    { regex: /expression\s*\(/gi, name: 'CSS expression()' },
+    { regex: /document\s*\.\s*(cookie|location|write)/gi, name: 'Akses properti document/cookie' },
+    { regex: /window\s*\.\s*(location|open)/gi, name: 'Akses properti window' },
   ];
 
-  const dayName = days[date.getDay()];
-  const day = date.getDate();
-  const month = months[date.getMonth()];
-  const year = date.getFullYear();
+  for (const pattern of maliciousPatterns) {
+    if (pattern.regex.test(input)) {
+      return {
+        isMalicious: true,
+        detectedPattern: pattern.name,
+        reason: `Peringatan Keamanan: Terdeteksi pola script berbahaya (${pattern.name}). Komentar diblokir otomatis oleh sistem anti-XSS Facrial.`,
+      };
+    }
+  }
 
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
+  // Cek karakter tag HTML terbuka berpotensi bahaya
+  if (/<[a-z][\s\S]*>/i.test(input) && /(alert|prompt|confirm|fetch|xhr|exec)/i.test(normalized)) {
+    return {
+      isMalicious: true,
+      detectedPattern: 'Potensi Eksekusi Script HTML',
+      reason: 'Peringatan Keamanan: Terdeteksi tag HTML dengan perintah eksekusi kode terlarang.',
+    };
+  }
 
-  return `${dayName}, ${day} ${month} ${year} • ${hours}:${minutes} WIB`;
+  return { isMalicious: false };
+}
+
+// Validasi slug agar hanya berisi alfanumerik dan tanda hubung
+export function createSafeSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }

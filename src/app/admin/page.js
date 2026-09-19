@@ -2,7 +2,7 @@
 'use client';
 
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '../../lib/supabase';
 
 // Sanitasi dasar mencegah Cross-Site Scripting (XSS)
 function sanitize(str) {
