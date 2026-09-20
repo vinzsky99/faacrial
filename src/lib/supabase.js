@@ -112,7 +112,6 @@ export const defaultVerifiedAuthors = [
 export function getLocalPosts() {
   if (typeof window === 'undefined') return initialPosts;
   try {
-    // Bersihkan key lama dari browser
     ['facrial_posts_v1', 'facrial_posts_v2', 'facrial_posts_hukum_politik_v1', 'facrial_posts_hukum_politik_v2'].forEach((k) => {
       try {
         localStorage.removeItem(k);
@@ -126,7 +125,6 @@ export function getLocalPosts() {
     }
     const parsed = JSON.parse(stored);
 
-    // Cek apakah ada berita IT lama yang menyusup
     const containsOldIT = parsed.some(
       (p) =>
         p.category === 'Teknologi' ||
@@ -209,7 +207,6 @@ export async function updatePostApprovalStatus(
     posts[idx].status = newStatus;
     saveLocalPosts(posts);
 
-    // Kirim notifikasi jika disetujui
     if (newStatus === 'approved') {
       addNotification({
         type: 'approval',
@@ -271,7 +268,6 @@ export async function fetchPostBySlug(slug) {
 }
 
 // Membuat postingan / agenda baru
-// Jika diposting oleh Author biasa, status otomatis 'pending_approval' (Menunggu Persetujuan Admin)
 export async function insertPost(newPost, postedByRole = 'admin') {
   const postToSave = {
     ...newPost,
@@ -294,7 +290,6 @@ export async function insertPost(newPost, postedByRole = 'admin') {
   const updated = [postToSave, ...posts];
   saveLocalPosts(updated);
 
-  // Buat notifikasi otomatis ke sistem
   if (postedByRole === 'author') {
     addNotification({
       type: 'post',
@@ -330,7 +325,6 @@ export async function incrementPostLove(postId, userIdentifier = 'guest-user') {
   posts[index].loves = posts[index].likes;
   saveLocalPosts(posts);
 
-  // Kirim notifikasi realtime Love
   addNotification({
     type: 'love',
     title: 'Seseorang Memberikan Love ❤️',
@@ -341,13 +335,11 @@ export async function incrementPostLove(postId, userIdentifier = 'guest-user') {
 
   if (isSupabaseConfigured) {
     try {
-      // 1. Simpan ke tabel post_loves
       await supabase.from('post_loves').insert([{
         post_id: postId,
         user_identifier: userIdentifier + '_' + Date.now(),
       }]);
 
-      // 2. Update counter di tabel posts
       await supabase
         .from('posts')
         .update({ loves: posts[index].likes, likes: posts[index].likes })
@@ -359,7 +351,6 @@ export async function incrementPostLove(postId, userIdentifier = 'guest-user') {
   return posts[index].likes;
 }
 
-// Alias untuk backwards compatibility
 export const incrementPostLike = incrementPostLove;
 
 // =========================================================================
@@ -417,7 +408,7 @@ export function getAllCommentsForAdmin() {
 export async function saveComment(comment) {
   const newComment = {
     ...comment,
-    status: 'approved', // Langsung aktif atau bisa di-hold admin
+    status: 'approved',
     likes: 0,
   };
 
@@ -430,7 +421,6 @@ export async function saveComment(comment) {
     } catch (e9) {}
   }
 
-  // Auto-tambah notifikasi komentar baru ke Admin & Pembaca
   addNotification({
     type: 'comment',
     title: `Komentar Baru dari ${newComment.authorName}`,
@@ -504,7 +494,6 @@ export async function deleteComment(commentId) {
 // FITUR AUTHOR VERIFIKASI EMAIL KE DATABASE SUPABASE OTOMATIS
 // =========================================================================
 
-// Mengambil seluruh author yang telah diverifikasi
 export async function getVerifiedAuthors() {
   if (isSupabaseConfigured) {
     try {
@@ -521,7 +510,6 @@ export async function getVerifiedAuthors() {
     }
   }
 
-  // Local storage fallback
   if (typeof window !== 'undefined') {
     try {
       const stored = localStorage.getItem(LOCAL_AUTHORS_KEY);
@@ -536,9 +524,7 @@ export async function getVerifiedAuthors() {
   return defaultVerifiedAuthors;
 }
 
-// Memverifikasi atau mendaftarkan author baru via email (masuk database Supabase otomatis)
 export async function verifyAndSaveAuthor(newAuthor) {
-  // 1. Kirim otomatis ke Supabase database jika terkoneksi
   if (isSupabaseConfigured) {
     try {
       const { error } = await supabase.from('verified_authors').upsert([
@@ -569,7 +555,6 @@ export async function verifyAndSaveAuthor(newAuthor) {
     }
   }
 
-  // 2. Simpan ke local storage agar seketika aktif
   const currentAuthors = await getVerifiedAuthors();
   const existingIdx = currentAuthors.findIndex(
     (a) => a.email.toLowerCase() === newAuthor.email.toLowerCase()
@@ -597,7 +582,6 @@ export async function verifyAndSaveAuthor(newAuthor) {
   return updated;
 }
 
-// Update Profil Author / Admin Terverifikasi (Facebook Profile style)
 export async function updateAuthorProfile(updatedData) {
   const currentAuthors = await getVerifiedAuthors();
   const idx = currentAuthors.findIndex((a) => a.id === updatedData.id || (updatedData.email && a.email.toLowerCase() === updatedData.email.toLowerCase()));
@@ -648,7 +632,6 @@ export async function updateAuthorProfile(updatedData) {
   return merged;
 }
 
-// Verifikasi kredensial email author/admin
 export async function checkAuthorVerification(email) {
   const cleanEmail = email.toLowerCase().trim();
   
@@ -675,7 +658,6 @@ export async function checkAuthorVerification(email) {
 // FITUR PENDAFTARAN CALON AUTHOR (BECOME AN AUTHOR) KE SUPABASE
 // =========================================================================
 
-// Contoh data pendaftar awal untuk demo
 const defaultApplications = [
   {
     id: 'app-demo-1',
@@ -750,7 +732,6 @@ export async function submitAuthorApplication(
     }) + ' WIB',
   };
 
-  // 1. Simpan ke database Supabase
   if (isSupabaseConfigured) {
     try {
       await supabase.from('author_applications').insert([{
@@ -770,7 +751,6 @@ export async function submitAuthorApplication(
     }
   }
 
-  // 2. Simpan lokal
   if (typeof window !== 'undefined') {
     try {
       const current = await getAuthorApplications();
@@ -779,7 +759,6 @@ export async function submitAuthorApplication(
     } catch (e18) {}
   }
 
-  // 3. Picu notifikasi realtime untuk Admin Redaksi
   addNotification({
     type: 'author_application',
     title: 'Pendaftaran Calon Author Baru',
@@ -830,9 +809,16 @@ export async function updateAuthorApplicationStatus(
       workplace: app.institution,
       education: app.expertise,
       ktaNumber: `KTA-AUTH-${Date.now().toString().slice(-4)}/RED/2026`,
-      phone: app.phone,
-      socials: { email: app.email },
-    };
+      socials: {
+        email: app.email,
+        instagram: '',
+        facebook: '',
+        linkedin: '',
+        website: '',
+        ...((app ).socials || {}),
+      } ,
+    } ;
+
     await verifyAndSaveAuthor(newAuthor);
 
     // Kirim notifikasi sistem
@@ -878,4 +864,3 @@ export async function deleteAuthorApplication(appId) {
   }
   return true;
 }
-
