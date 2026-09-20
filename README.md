@@ -200,6 +200,6 @@ ALTER PUBLICATION supabase_realtime ADD TABLE comments;
 - **Sanitasi Pencarian**: Menghapus tag `<script>`, tanda kutip SQL, dan karakter eksploitasi lainnya.
 - **Proteksi Tautan**: Mencegah serangan injeksi protokol berbahaya seperti `javascript:` atau `data:`.
 
---- Update deploy ----
+### --- Update deploy ---- ###
 
 **Design © 2026 Fachrial. Dibuat dengan Design UI UX Tailwind CSS.**
