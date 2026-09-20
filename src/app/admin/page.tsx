@@ -29,9 +29,15 @@ import {
   MapPin,
   BadgeCheck,
   Camera,
-  Edit3
+  Edit3,
+  Check,
+  X,
+  MessageCircle,
+  Clock,
+  LogOut,
+  ChevronRight
 } from 'lucide-react';
-import { Post, Attachment, AgendaDetails, ThemeConfig, VerifiedAuthor, Author } from '../../types';
+import { Post, Attachment, AgendaDetails, ThemeConfig, VerifiedAuthor, Author, AuthorApplication, Comment } from '../../types';
 import { sanitizeText, createSafeSlug } from '../../lib/security';
 import { primaryAuthor } from '../../data/initialData';
 import {
@@ -41,7 +47,16 @@ import {
   getVerifiedAuthors,
   verifyAndSaveAuthor,
   checkAuthorVerification,
-  updateAuthorProfile
+  updateAuthorProfile,
+  getAuthorApplications,
+  updateAuthorApplicationStatus,
+  deleteAuthorApplication,
+  getAllPostsForAdmin,
+  updatePostApprovalStatus,
+  deletePostPermanently,
+  getAllCommentsForAdmin,
+  updateCommentStatus,
+  deleteComment
 } from '../../lib/supabase';
 
 interface AdminPageProps {
@@ -49,6 +64,7 @@ interface AdminPageProps {
   themeConfig: ThemeConfig;
   onBack: () => void;
   onPostCreated: (newPost: Post) => void;
+  onSelectPost?: (slug: string) => void;
 }
 
 export const AdminPage: React.FC<AdminPageProps> = ({
@@ -56,9 +72,34 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   themeConfig,
   onBack,
   onPostCreated,
+  onSelectPost,
 }) => {
-  // Navigation Tabs
-  const [activeTab, setActiveTab] = useState<'create' | 'authors' | 'manage'>('create');
+  // Admin Login Security State
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const sess = localStorage.getItem('facrial_admin_session');
+      return sess === 'true' || sess === null; // Default true untuk kemudahan pratinjau langsung
+    }
+    return true;
+  });
+  const [adminPasswordInput, setAdminPasswordInput] = useState('');
+  const [adminLoginError, setAdminLoginError] = useState<string | null>(null);
+
+  // Navigation Tabs: 'approvals' | 'applications' | 'create' | 'authors' | 'comments' | 'manage'
+  const [activeTab, setActiveTab] = useState<
+    'approvals' | 'applications' | 'create' | 'authors' | 'comments' | 'manage'
+  >('approvals');
+
+  // Author Applications (Become an Author Queue)
+  const [applications, setApplications] = useState<AuthorApplication[]>([]);
+  const [isLoadingApplications, setIsLoadingApplications] = useState(false);
+
+  // All Posts (including Pending for Approval Queue)
+  const [allAdminPosts, setAllAdminPosts] = useState<Post[]>(posts);
+  const [isLoadingAdminPosts, setIsLoadingAdminPosts] = useState(false);
+
+  // Comments for Moderation
+  const [allComments, setAllComments] = useState<Comment[]>([]);
 
   // Verification Portal State (Email Verification to Database)
   const [verifiedAuthorsList, setVerifiedAuthorsList] = useState<VerifiedAuthor[]>([]);
@@ -114,10 +155,107 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Load Verified Authors on Mount
+  // Load Verified Authors and Admin Data on Mount
   useEffect(() => {
     loadAuthors();
+    loadAllAdminData();
   }, []);
+
+  const loadAllAdminData = async () => {
+    setIsLoadingApplications(true);
+    setIsLoadingAdminPosts(true);
+    try {
+      const [apps, allPosts] = await Promise.all([
+        getAuthorApplications(),
+        getAllPostsForAdmin(),
+      ]);
+      setApplications(apps);
+      setAllAdminPosts(allPosts);
+      setAllComments(getAllCommentsForAdmin());
+    } catch (err) {
+      console.warn('Error loading admin data:', err);
+    } finally {
+      setIsLoadingApplications(false);
+      setIsLoadingAdminPosts(false);
+    }
+  };
+
+  // Handler: Persetujuan Postingan / Agenda
+  const handleApprovePost = async (postId: string) => {
+    await updatePostApprovalStatus(postId, 'approved');
+    setSuccessMessage('Postingan berhasil disetujui dan resmi tayang ke publik!');
+    loadAllAdminData();
+  };
+
+  const handleRejectPost = async (postId: string) => {
+    await updatePostApprovalStatus(postId, 'rejected');
+    setSuccessMessage('Postingan ditolak dan dikembalikan ke Author untuk revisi.');
+    loadAllAdminData();
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    if (!confirm('Yakin ingin menghapus postingan ini secara permanen dari database?')) return;
+    await deletePostPermanently(postId);
+    setSuccessMessage('Postingan berhasil dihapus secara permanen.');
+    loadAllAdminData();
+  };
+
+  // Handler: Verifikasi Calon Author (Become an Author)
+  const handleApproveApplication = async (appId: string) => {
+    await updateAuthorApplicationStatus(appId, 'approved');
+    setSuccessMessage('Calon author resmi disetujui! Akun telah dibuat otomatis di database verified_authors.');
+    loadAllAdminData();
+    loadAuthors();
+  };
+
+  const handleRejectApplication = async (appId: string) => {
+    await updateAuthorApplicationStatus(appId, 'rejected');
+    setSuccessMessage('Pendaftaran calon author telah ditolak.');
+    loadAllAdminData();
+  };
+
+  const handleDeleteApplication = async (appId: string) => {
+    if (!confirm('Hapus pendaftaran ini dari database?')) return;
+    await deleteAuthorApplication(appId);
+    setSuccessMessage('Berkas pendaftaran berhasil dihapus.');
+    loadAllAdminData();
+  };
+
+  // Handler: Moderasi Komentar
+  const handleToggleCommentStatus = async (commentId: string, currentStatus: string = 'approved') => {
+    const nextStatus = currentStatus === 'approved' ? 'hidden' : 'approved';
+    await updateCommentStatus(commentId, nextStatus as 'approved' | 'hidden');
+    setAllComments(getAllCommentsForAdmin());
+    setSuccessMessage(`Komentar telah diubah statusnya menjadi: ${nextStatus === 'approved' ? 'Aktif' : 'Disembunyikan'}.`);
+  };
+
+  const handleDeleteCommentAction = async (commentId: string) => {
+    if (!confirm('Hapus komentar ini secara permanen?')) return;
+    await deleteComment(commentId);
+    setAllComments(getAllCommentsForAdmin());
+    setSuccessMessage('Komentar berhasil dihapus.');
+  };
+
+  // Handler: Login Admin
+  const handleAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminLoginError(null);
+    if (adminPasswordInput === 'admin1998' || adminPasswordInput === 'redaksi1998' || adminPasswordInput.trim() === 'admin') {
+      setIsAdminLoggedIn(true);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('facrial_admin_session', 'true');
+      }
+    } else {
+      setAdminLoginError('Kata sandi admin redaksi salah. (Gunakan kata sandi redaksi: admin1998)');
+    }
+  };
+
+  const handleAdminLogout = () => {
+    setIsAdminLoggedIn(false);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('facrial_admin_session');
+    }
+  };
 
   const loadAuthors = async () => {
     const list = await getVerifiedAuthors();
@@ -351,6 +489,9 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     }
   };
 
+  const pendingPosts = allAdminPosts.filter((p) => p.status === 'pending_approval');
+  const pendingApps = applications.filter((a) => a.status === 'pending');
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 animate-in fade-in duration-300">
       {/* ========================================================================= */}
@@ -359,21 +500,22 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-3xl border shadow-sm bg-gradient-to-r from-blue-900/10 via-indigo-900/10 to-transparent border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-3">
           <button
+            id="admin-btn-back"
             onClick={onBack}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover-light-glow transition-all"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Kembali ke Beranda Publik</span>
+            <span>Kembali ke Beranda</span>
           </button>
           <div>
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-blue-500" />
               <h1 className="text-base sm:text-lg font-extrabold font-heading text-slate-900 dark:text-white">
-                Portal Khusus Redaksi & Author Terverifikasi
+                Portal Kontrol Admin Redaksi Facrial (/admin)
               </h1>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Akses khusus jurnalis investigasi hukum, reformasi, dan evaluasi sejarah Indonesia.
+              Pusat kendali persetujuan naskah author, verifikasi calon peneliti, moderasi komentar, dan database Supabase.
             </p>
           </div>
         </div>
@@ -383,129 +525,668 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             <Database className="w-3.5 h-3.5" />
             {isSupabaseConfigured ? 'Supabase Database Connected' : 'Local Realtime Storage'}
           </span>
-          {activeAuthor && (
-            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-              <UserCheck className="w-3.5 h-3.5" />
-              {activeAuthor.name}
+          {isAdminLoggedIn ? (
+            <button
+              id="admin-btn-logout"
+              onClick={handleAdminLogout}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all"
+            >
+              <LogOut className="w-3 h-3" />
+              Keluar Admin
+            </button>
+          ) : (
+            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+              <Lock className="w-3 h-3" /> Sesi Terkunci
             </span>
           )}
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* 2. EMAIL VERIFICATION BADGE & LOGIN CHECK                                 */}
-      {/* ========================================================================= */}
-      <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-blue-600/20 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
-            <Mail className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-900 dark:text-white">
-                Status Verifikasi Email:
-              </span>
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                <CheckCircle className="w-3 h-3" />
-                Terverifikasi Database ({currentUserEmail})
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Hanya author yang telah diverifikasi emailnya di database yang memiliki izin menerbitkan berita & agenda.
-            </p>
-          </div>
-        </div>
-
-        {/* Quick Email Switch / Check */}
-        <form onSubmit={handleCheckEmailVerification} className="flex items-center gap-2">
-          <input
-            type="email"
-            value={verificationInputEmail}
-            onChange={(e) => setVerificationInputEmail(e.target.value)}
-            placeholder="Cek email author lain..."
-            className="px-3 py-1.5 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 w-52 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-          <button
-            type="submit"
-            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+      {!isAdminLoggedIn ? (
+        /* ========================================================================= */
+        /* ADMIN LOGIN GATE                                                          */
+        /* ========================================================================= */
+        <div className="max-w-md mx-auto py-12">
+          <div
+            className={`p-8 rounded-3xl border shadow-2xl space-y-6 ${
+              themeConfig.mode === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+            }`}
           >
-            Cek Status
-          </button>
-        </form>
-      </div>
+            <div className="text-center space-y-2">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/30">
+                <ShieldCheck className="w-8 h-8" />
+              </div>
+              <h2 className="text-xl font-extrabold text-slate-900 dark:text-white font-heading">
+                Login Portal Administrator
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Masukkan kata sandi Dewan Redaksi untuk mengakses data Supabase secara penuh.
+              </p>
+            </div>
 
-      {verificationFeedback && (
-        <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-medium flex items-center gap-2">
-          <Sparkles className="w-4 h-4 flex-shrink-0" />
-          <span>{verificationFeedback}</span>
-        </div>
-      )}
+            {adminLoginError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs font-medium flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{adminLoginError}</span>
+              </div>
+            )}
 
-      {/* ========================================================================= */}
-      {/* 3. TABS MENU                                                              */}
-      {/* ========================================================================= */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
-        <button
-          onClick={() => setActiveTab('create')}
-          className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
-            activeTab === 'create'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <FileText className="w-4 h-4" />
-          <span>Tulis Berita / Agenda & Upload Berkas</span>
-        </button>
+            <form onSubmit={handleAdminLogin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Kata Sandi Redaksi Admin
+                </label>
+                <input
+                  id="admin-password-input"
+                  type="password"
+                  placeholder="Masukkan kata sandi (default: admin1998)"
+                  value={adminPasswordInput}
+                  onChange={(e) => setAdminPasswordInput(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
 
-        <button
-          onClick={() => setActiveTab('authors')}
-          className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
-            activeTab === 'authors'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <UserCheck className="w-4 h-4" />
-          <span>Daftar Author Terverifikasi Database ({verifiedAuthorsList.length})</span>
-        </button>
+              <button
+                id="btn-login-admin-submit"
+                type="submit"
+                className="w-full py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-all shadow-md shadow-blue-500/25 flex items-center justify-center gap-2"
+              >
+                <Lock className="w-4 h-4" /> Masuk Sebagai Administrator
+              </button>
+            </form>
 
-        <button
-          onClick={() => setActiveTab('manage')}
-          className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
-            activeTab === 'manage'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Award className="w-4 h-4" />
-          <span>Arsip Berita Terbit ({posts.length})</span>
-        </button>
-      </div>
-
-      {/* Global Notifications */}
-      {successMessage && (
-        <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center justify-between gap-2 animate-in fade-in">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 flex-shrink-0" />
-            <span>{successMessage}</span>
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 text-center">
+              <button
+                id="btn-demo-quick-admin-login"
+                onClick={() => {
+                  setIsAdminLoggedIn(true);
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('facrial_admin_session', 'true');
+                  }
+                }}
+                className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Atau Buka Cepat (Demo Mode Redaksi 1-Klik) →
+              </button>
+            </div>
           </div>
-          <button onClick={() => setSuccessMessage(null)} className="text-xs hover:underline">
-            Tutup
-          </button>
         </div>
-      )}
+      ) : (
+        <>
+          {/* ========================================================================= */}
+          {/* 2. EMAIL VERIFICATION BADGE & LOGIN CHECK                                 */}
+          {/* ========================================================================= */}
+          <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-blue-600/20 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+                <Mail className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-900 dark:text-white">
+                    Status Administrator Database:
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3" />
+                    Admin Utama Aktif ({currentUserEmail})
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Anda memiliki otoritas penuh untuk menyetujui artikel author, memverifikasi calon peneliti, dan memoderasi komentar.
+                </p>
+              </div>
+            </div>
 
-      {errorMessage && (
-        <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs font-bold flex items-center justify-between gap-2 animate-in fade-in">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span>{errorMessage}</span>
+            {/* Quick Email Switch / Check */}
+            <form onSubmit={handleCheckEmailVerification} className="flex items-center gap-2">
+              <input
+                type="email"
+                value={verificationInputEmail}
+                onChange={(e) => setVerificationInputEmail(e.target.value)}
+                placeholder="Cek status email author..."
+                className="px-3 py-1.5 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 w-52 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <button
+                type="submit"
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+              >
+                Cek
+              </button>
+            </form>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-xs hover:underline">
-            Tutup
-          </button>
-        </div>
-      )}
+
+          {verificationFeedback && (
+            <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-medium flex items-center gap-2">
+              <Sparkles className="w-4 h-4 flex-shrink-0" />
+              <span>{verificationFeedback}</span>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* 3. TABS MENU DENGAN COUNTER REALTIME                                      */}
+          {/* ========================================================================= */}
+          <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto">
+            {/* Tab: Persetujuan Post & Agenda */}
+            <button
+              id="tab-admin-approvals"
+              onClick={() => setActiveTab('approvals')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap ${
+                activeTab === 'approvals'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Clock className="w-4 h-4" />
+              <span>Persetujuan Postingan</span>
+              {pendingPosts.length > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-400 text-slate-900 animate-pulse">
+                  {pendingPosts.length} Menunggu
+                </span>
+              )}
+            </button>
+
+            {/* Tab: Verifikasi Calon Author */}
+            <button
+              id="tab-admin-applications"
+              onClick={() => setActiveTab('applications')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap ${
+                activeTab === 'applications'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>Calon Author</span>
+              {pendingApps.length > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-red-500 text-white animate-pulse">
+                  {pendingApps.length} Pengajuan
+                </span>
+              )}
+            </button>
+
+            {/* Tab: Kontrol Komentar */}
+            <button
+              id="tab-admin-comments"
+              onClick={() => setActiveTab('comments')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap ${
+                activeTab === 'comments'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <MessageCircle className="w-4 h-4" />
+              <span>Kontrol Komentar ({allComments.length})</span>
+            </button>
+
+            {/* Tab: Manajemen Author Database */}
+            <button
+              id="tab-admin-authors"
+              onClick={() => setActiveTab('authors')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap ${
+                activeTab === 'authors'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>Author Database ({verifiedAuthorsList.length})</span>
+            </button>
+
+            {/* Tab: Tulis Langsung (Admin) */}
+            <button
+              id="tab-admin-create"
+              onClick={() => setActiveTab('create')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap ${
+                activeTab === 'create'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              <span>Tulis Postingan (Admin)</span>
+            </button>
+
+            {/* Tab: Arsip Semua Postingan */}
+            <button
+              id="tab-admin-manage"
+              onClick={() => setActiveTab('manage')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap ${
+                activeTab === 'manage'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Award className="w-4 h-4" />
+              <span>Semua Post ({allAdminPosts.length})</span>
+            </button>
+          </div>
+
+          {/* Global Notifications */}
+          {successMessage && (
+            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center justify-between gap-2 animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{successMessage}</span>
+              </div>
+              <button onClick={() => setSuccessMessage(null)} className="text-xs hover:underline">
+                Tutup
+              </button>
+            </div>
+          )}
+
+          {errorMessage && (
+            <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs font-bold flex items-center justify-between gap-2 animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+              <button onClick={() => setErrorMessage(null)} className="text-xs hover:underline">
+                Tutup
+              </button>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB APPROVALS: DAFTAR PERSETUJUAN POST & AGENDA AUTHOR                    */}
+          {/* ========================================================================= */}
+          {activeTab === 'approvals' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-5 rounded-2xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/50">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    Antrean Persetujuan Postingan & Agenda Author
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Sesuai kebijakan redaksi, setiap artikel atau agenda yang ditulis oleh Author harus disetujui Admin sebelum tayang di beranda publik.
+                  </p>
+                </div>
+                <div className="text-xs font-bold px-3 py-1 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                  {pendingPosts.length} Postingan Menunggu Persetujuan
+                </div>
+              </div>
+
+              {isLoadingAdminPosts ? (
+                <div className="py-12 text-center text-xs text-slate-500">Memuat antrean postingan...</div>
+              ) : pendingPosts.length === 0 ? (
+                <div className="p-12 text-center rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 space-y-2">
+                  <CheckCircle className="w-12 h-12 mx-auto text-emerald-500/60" />
+                  <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                    Semua Antrean Bersih!
+                  </h4>
+                  <p className="text-xs text-slate-400">
+                    Tidak ada artikel atau agenda yang sedang menunggu persetujuan Admin saat ini.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {pendingPosts.map((post) => (
+                    <div
+                      key={post.id}
+                      className={`p-6 rounded-3xl border shadow-md space-y-4 ${
+                        themeConfig.mode === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                            <Clock className="w-3 h-3" /> Menunggu Persetujuan
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                            {post.category}
+                          </span>
+                          {post.isAgenda && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                              Format Agenda
+                            </span>
+                          )}
+                          <span className="text-xs text-slate-400">• {post.formattedDate} ({post.time})</span>
+                        </div>
+
+                        <div className="text-xs text-slate-500 flex items-center gap-2">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300">Penulis:</span>
+                          <span className="font-bold text-blue-600 dark:text-blue-400">{post.author.name}</span>
+                          {post.author.email && <span className="text-[11px] text-slate-400">({post.author.email})</span>}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col md:flex-row items-start gap-4">
+                        {post.coverImage && (
+                          <img
+                            src={post.coverImage}
+                            alt={post.title}
+                            className="w-full md:w-48 h-32 rounded-2xl object-cover flex-shrink-0 border border-slate-200 dark:border-slate-800"
+                          />
+                        )}
+                        <div className="space-y-2 flex-1">
+                          <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                            {post.title}
+                          </h4>
+                          <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-3 leading-relaxed">
+                            {post.excerpt}
+                          </p>
+                          {post.isAgenda && post.agenda && (
+                            <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 text-[11px] text-slate-600 dark:text-slate-300 space-y-0.5">
+                              <div><strong>Tanggal:</strong> {post.agenda.eventDate} ({post.agenda.eventTime})</div>
+                              <div><strong>Lokasi:</strong> {post.agenda.location}</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Tombol Aksi Persetujuan */}
+                      <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-[11px] text-slate-400">
+                          ID: {post.id} • Slug: {post.slug}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            id={`btn-approve-post-${post.id}`}
+                            onClick={() => handleApprovePost(post.id)}
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all shadow-md flex items-center gap-1.5"
+                          >
+                            <Check className="w-4 h-4" />
+                            Setujui & Terbitkan
+                          </button>
+
+                          <button
+                            id={`btn-reject-post-${post.id}`}
+                            onClick={() => handleRejectPost(post.id)}
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-all flex items-center gap-1.5"
+                          >
+                            <X className="w-4 h-4" />
+                            Kembalikan / Tolak
+                          </button>
+
+                          <button
+                            id={`btn-delete-post-${post.id}`}
+                            onClick={() => handleDeletePost(post.id)}
+                            className="px-3 py-2 rounded-xl text-xs font-bold text-red-600 hover:bg-red-500/10 transition-all flex items-center gap-1"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Hapus
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB APPLICATIONS: VERIFIKASI CALON AUTHOR & FOTO DATABASE                 */}
+          {/* ========================================================================= */}
+          {activeTab === 'applications' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-5 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900/50">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    Antrean Verifikasi Calon Author & Foto Identitas Supabase
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Calon author yang mendaftar melalui formulir pendaftaran. Admin dapat memeriksa identitas, portofolio, dan menyetujui akun author secara otomatis.
+                  </p>
+                </div>
+                <div className="text-xs font-bold px-3 py-1 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                  {applications.length} Total Pendaftar ({pendingApps.length} Baru)
+                </div>
+              </div>
+
+              {isLoadingApplications ? (
+                <div className="py-12 text-center text-xs text-slate-500">Memuat berkas calon author...</div>
+              ) : applications.length === 0 ? (
+                <div className="p-12 text-center rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 space-y-2">
+                  <UserPlus className="w-12 h-12 mx-auto text-slate-400" />
+                  <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                    Belum Ada Pengajuan Calon Author
+                  </h4>
+                  <p className="text-xs text-slate-400">
+                    Pendaftar baru dari halaman /become-author akan muncul di sini secara otomatis.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-6">
+                  {applications.map((app) => {
+                    return (
+                      <div
+                        key={app.id}
+                        className={`p-6 rounded-3xl border shadow-md space-y-4 ${
+                          themeConfig.mode === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+                        }`}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold flex items-center gap-1 ${
+                                app.status === 'approved'
+                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                  : app.status === 'rejected'
+                                  ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
+                                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 animate-pulse'
+                              }`}
+                            >
+                              {app.status === 'approved' && <CheckCircle className="w-3 h-3" />}
+                              {app.status === 'rejected' && <X className="w-3 h-3" />}
+                              {app.status === 'pending' && <Clock className="w-3 h-3" />}
+                              {app.status === 'approved'
+                                ? 'Resmi Menjadi Author'
+                                : app.status === 'rejected'
+                                ? 'Ditolak'
+                                : 'Menunggu Verifikasi Admin'}
+                            </span>
+                            <span className="text-xs text-slate-400">
+                              Didaftarkan: {new Date(app.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                            </span>
+                          </div>
+
+                          <div className="text-xs font-mono text-slate-400">ID: {app.id}</div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                          {/* Foto Verifikasi Profil */}
+                          <div className="space-y-2">
+                            <span className="text-[11px] font-bold uppercase text-slate-400 block">
+                              Foto Verifikasi Profil / KTP:
+                            </span>
+                            {app.verificationPhoto ? (
+                              <div className="relative group rounded-2xl overflow-hidden border-2 border-blue-500 shadow-md">
+                                <img
+                                  src={app.verificationPhoto}
+                                  alt={`Verifikasi ${app.name}`}
+                                  className="w-full h-44 object-cover"
+                                />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold">
+                                  Tersimpan di Supabase
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="w-full h-40 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs text-slate-400">
+                                Tanpa Foto
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Data Calon Author */}
+                          <div className="md:col-span-3 space-y-3">
+                            <div>
+                              <h4 className="text-lg font-black text-slate-900 dark:text-white font-heading">
+                                {app.name}
+                              </h4>
+                              <p className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                                {app.expertise} • {app.institution}
+                              </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-600 dark:text-slate-300">
+                              <div><strong>Email:</strong> {app.email}</div>
+                              <div><strong>WhatsApp / Telp:</strong> {app.phone}</div>
+                              {app.portfolioUrl && (
+                                <div className="sm:col-span-2">
+                                  <strong>Portofolio:</strong>{' '}
+                                  <a
+                                    href={app.portfolioUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
+                                  >
+                                    {app.portfolioUrl} <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800">
+                              <span className="text-[11px] font-bold text-slate-500 uppercase block mb-1">
+                                Fokus Kajian & Alasan Bergabung:
+                              </span>
+                              <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
+                                {app.bioReason}
+                              </p>
+                            </div>
+
+                            {/* Tombol Aksi Verifikasi */}
+                            <div className="pt-2 flex items-center justify-end gap-2 flex-wrap">
+                              {app.status !== 'approved' && (
+                                <button
+                                  id={`btn-approve-author-${app.id}`}
+                                  onClick={() => handleApproveApplication(app.id)}
+                                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-all shadow-md shadow-blue-500/25 flex items-center gap-1.5"
+                                >
+                                  <ShieldCheck className="w-4 h-4" />
+                                  Setujui Jadi Author Resmi
+                                </button>
+                              )}
+
+                              {app.status === 'pending' && (
+                                <button
+                                  id={`btn-reject-author-${app.id}`}
+                                  onClick={() => handleRejectApplication(app.id)}
+                                  className="px-4 py-2 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-all flex items-center gap-1.5"
+                                >
+                                  <X className="w-4 h-4" />
+                                  Tolak
+                                </button>
+                              )}
+
+                              <button
+                                id={`btn-delete-author-app-${app.id}`}
+                                onClick={() => handleDeleteApplication(app.id)}
+                                className="px-3 py-2 rounded-xl text-xs font-bold text-red-600 hover:bg-red-500/10 transition-all flex items-center gap-1"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                Hapus
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB COMMENTS: KONTROL & MODERASI KOMENTAR REALTIME                        */}
+          {/* ========================================================================= */}
+          {activeTab === 'comments' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-5 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <MessageCircle className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    Kontrol & Moderasi Komentar Publik
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Kelola diskusi publik, tanggapan pembaca, dan cegah spam atau ujaran kebencian.
+                  </p>
+                </div>
+                <span className="text-xs font-bold px-3 py-1 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                  {allComments.length} Total Komentar Terdaftar
+                </span>
+              </div>
+
+              {allComments.length === 0 ? (
+                <div className="p-12 text-center rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 space-y-2">
+                  <MessageCircle className="w-12 h-12 mx-auto text-slate-400" />
+                  <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                    Belum Ada Komentar Publik
+                  </h4>
+                  <p className="text-xs text-slate-400">
+                    Setiap komentar yang dikirim oleh pembaca akan tercatat dan dapat dikontrol di sini.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-200 dark:divide-slate-800 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900">
+                  {allComments.map((comment) => (
+                    <div key={comment.id} className="p-4 sm:p-5 flex flex-col sm:flex-row items-start justify-between gap-4">
+                      <div className="space-y-1.5 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-xs text-slate-900 dark:text-white">
+                            {comment.authorName}
+                          </span>
+                          {comment.authorEmail && (
+                            <span className="text-[11px] text-slate-400 font-mono">
+                              ({comment.authorEmail})
+                            </span>
+                          )}
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              comment.status === 'hidden'
+                                ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
+                                : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                            }`}
+                          >
+                            {comment.status === 'hidden' ? 'Disembunyikan' : 'Aktif Tayang'}
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            {new Date(comment.createdAt).toLocaleString('id-ID')}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                          {comment.content}
+                        </p>
+
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          Post Slug: {comment.postSlug}
+                        </div>
+                      </div>
+
+                      {/* Tombol Aksi Moderasi */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          id={`btn-toggle-comment-${comment.id}`}
+                          onClick={() => handleToggleCommentStatus(comment.id, comment.status)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                            comment.status === 'hidden'
+                              ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                              : 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 border border-amber-500/20'
+                          }`}
+                        >
+                          {comment.status === 'hidden' ? 'Tampilkan Kembali' : 'Sembunyikan'}
+                        </button>
+
+                        <button
+                          id={`btn-delete-comment-${comment.id}`}
+                          onClick={() => handleDeleteCommentAction(comment.id)}
+                          className="p-1.5 rounded-xl text-red-600 hover:bg-red-500/10 transition-all"
+                          title="Hapus Komentar"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
       {/* ========================================================================= */}
       {/* TAB 1: FORM INPUT KONTEN & UPLOAD FILE GAMBAR & DOKUMEN                    */}
@@ -1218,6 +1899,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             ))}
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

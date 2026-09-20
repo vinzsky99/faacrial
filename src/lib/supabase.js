@@ -1,6 +1,7 @@
  function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }import { createClient, } from '@supabase/supabase-js';
 
 import { initialPosts } from '../data/initialData';
+import { addNotification } from './notifications';
 
 // Membaca URL dan Anon Key dari env (kompatibel Vite import.meta.env dan Next.js process.env)
 const envUrl = 
@@ -24,6 +25,8 @@ export const supabase = isSupabaseConfigured
 const LOCAL_STORAGE_KEY = 'facrial_posts_hukum_politik_v5';
 const LOCAL_COMMENTS_KEY = 'facrial_comments_v2';
 const LOCAL_AUTHORS_KEY = 'facrial_verified_authors_v5';
+const LOCAL_APPLICATIONS_KEY = 'facrial_author_applications_v1';
+const LOCAL_LOVED_POSTS_KEY = 'facrial_user_loved_posts_v1';
 
 const syncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
   ? new BroadcastChannel('facrial_realtime_sync')
@@ -159,8 +162,27 @@ export function saveLocalPosts(posts) {
   }
 }
 
-// Mengambil seluruh postingan (Dengan integrasi Supabase / Realtime Fallback)
+// Mengambil seluruh postingan untuk publik (hanya yang berstatus 'approved' atau yang belum memiliki flag status)
 export async function fetchAllPosts() {
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .or('status.eq.approved,status.is.null')
+        .order('date', { ascending: false });
+
+      if (!error && data && data.length > 0) return data ;
+    } catch (err) {
+      console.warn('Gagal menghubungi Supabase, beralih ke penyimpanan lokal:', err);
+    }
+  }
+  const local = getLocalPosts();
+  return local.filter((p) => !p.status || p.status === 'approved');
+}
+
+// Mengambil seluruh postingan untuk Admin (termasuk pending dan rejected)
+export async function getAllPostsForAdmin() {
   if (isSupabaseConfigured) {
     try {
       const { data, error } = await supabase
@@ -168,13 +190,66 @@ export async function fetchAllPosts() {
         .select('*')
         .order('date', { ascending: false });
 
-      if (error) throw error;
-      if (data && data.length > 0) return data ;
-    } catch (err) {
-      console.warn('Gagal menghubungi Supabase, beralih ke penyimpanan lokal:', err);
+      if (!error && data) return data ;
+    } catch (e3) {
+      // fallback to local
     }
   }
   return getLocalPosts();
+}
+
+// Update status persetujuan postingan (Approve / Reject oleh Admin)
+export async function updatePostApprovalStatus(
+  postId,
+  newStatus
+) {
+  const posts = getLocalPosts();
+  const idx = posts.findIndex((p) => p.id === postId);
+  if (idx !== -1) {
+    posts[idx].status = newStatus;
+    saveLocalPosts(posts);
+
+    // Kirim notifikasi jika disetujui
+    if (newStatus === 'approved') {
+      addNotification({
+        type: 'approval',
+        title: 'Postingan Disetujui & Diterbitkan',
+        message: `Artikel "${posts[idx].title}" telah disetujui oleh Admin Redaksi dan resmi tayang ke publik.`,
+        postSlug: posts[idx].slug,
+        postId: posts[idx].id,
+      });
+    }
+  }
+
+  if (isSupabaseConfigured) {
+    try {
+      await supabase
+        .from('posts')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', postId);
+    } catch (err) {
+      console.warn('Supabase post update error:', err);
+    }
+  }
+
+  return true;
+}
+
+// Hapus postingan secara permanen oleh Admin
+export async function deletePostPermanently(postId) {
+  const posts = getLocalPosts();
+  const filtered = posts.filter((p) => p.id !== postId);
+  saveLocalPosts(filtered);
+
+  if (isSupabaseConfigured) {
+    try {
+      await supabase.from('posts').delete().eq('id', postId);
+    } catch (err) {
+      console.warn('Supabase post delete error:', err);
+    }
+  }
+
+  return true;
 }
 
 // Mengambil postingan berdasarkan slug
@@ -187,7 +262,7 @@ export async function fetchPostBySlug(slug) {
         .eq('slug', slug)
         .single();
       if (!error && data) return data ;
-    } catch (e3) {
+    } catch (e4) {
       // Fallback
     }
   }
@@ -195,11 +270,20 @@ export async function fetchPostBySlug(slug) {
   return local.find((p) => p.slug === slug) || null;
 }
 
-// Membuat postingan / agenda baru (Hukum & Politik Indonesia)
-export async function insertPost(newPost) {
+// Membuat postingan / agenda baru
+// Jika diposting oleh Author biasa, status otomatis 'pending_approval' (Menunggu Persetujuan Admin)
+export async function insertPost(newPost, postedByRole = 'admin') {
+  const postToSave = {
+    ...newPost,
+    status: postedByRole === 'admin' ? 'approved' : 'pending_approval',
+    loves: newPost.likes || 0,
+    views: newPost.views || 1,
+    commentsCount: 0,
+  };
+
   if (isSupabaseConfigured) {
     try {
-      const { error } = await supabase.from('posts').insert([newPost]);
+      const { error } = await supabase.from('posts').insert([postToSave]);
       if (error) console.error('Supabase insert error:', error);
     } catch (err) {
       console.warn('Gagal insert ke Supabase, menyimpan lokal:', err);
@@ -207,56 +291,213 @@ export async function insertPost(newPost) {
   }
 
   const posts = getLocalPosts();
-  const updated = [newPost, ...posts];
+  const updated = [postToSave, ...posts];
   saveLocalPosts(updated);
+
+  // Buat notifikasi otomatis ke sistem
+  if (postedByRole === 'author') {
+    addNotification({
+      type: 'post',
+      title: 'Postingan Baru Menunggu Persetujuan',
+      message: `Author ${postToSave.author.name} mengirim artikel baru: "${postToSave.title}" untuk ditinjau Admin.`,
+      postSlug: postToSave.slug,
+      postId: postToSave.id,
+      avatar: postToSave.author.avatar,
+    });
+  } else {
+    addNotification({
+      type: postToSave.isAgenda ? 'agenda' : 'post',
+      title: postToSave.isAgenda ? 'Agenda Baru Diterbitkan' : 'Investigasi Baru Diterbitkan',
+      message: `Redaksi telah menerbitkan: "${postToSave.title}".`,
+      postSlug: postToSave.slug,
+      postId: postToSave.id,
+      avatar: postToSave.author.avatar,
+    });
+  }
+
   return true;
 }
 
-// Menambah like ke postingan
-export async function incrementPostLike(postId) {
+// =========================================================================
+// REAL-TIME LOVE / SUKA (HATI) DENGAN DATABASE SUPABASE
+// =========================================================================
+export async function incrementPostLove(postId, userIdentifier = 'guest-user') {
   const posts = getLocalPosts();
   const index = posts.findIndex((p) => p.id === postId);
   if (index === -1) return 0;
   
   posts[index].likes += 1;
+  posts[index].loves = posts[index].likes;
   saveLocalPosts(posts);
+
+  // Kirim notifikasi realtime Love
+  addNotification({
+    type: 'love',
+    title: 'Seseorang Memberikan Love ❤️',
+    message: `Pembaca memberikan Love pada artikel: "${posts[index].title.slice(0, 45)}..."`,
+    postSlug: posts[index].slug,
+    postId: posts[index].id,
+  });
 
   if (isSupabaseConfigured) {
     try {
+      // 1. Simpan ke tabel post_loves
+      await supabase.from('post_loves').insert([{
+        post_id: postId,
+        user_identifier: userIdentifier + '_' + Date.now(),
+      }]);
+
+      // 2. Update counter di tabel posts
       await supabase
         .from('posts')
-        .update({ likes: posts[index].likes })
+        .update({ loves: posts[index].likes, likes: posts[index].likes })
         .eq('id', postId);
-    } catch (e4) {
+    } catch (e5) {
       // Ignore
     }
   }
   return posts[index].likes;
 }
 
-// Komentar
+// Alias untuk backwards compatibility
+export const incrementPostLike = incrementPostLove;
+
+// =========================================================================
+// REAL-TIME DILIHAT / VIEWS COUNTER
+// =========================================================================
+export async function incrementPostView(postId) {
+  const posts = getLocalPosts();
+  const index = posts.findIndex((p) => p.id === postId);
+  if (index === -1) return 0;
+
+  posts[index].views = (posts[index].views || 0) + 1;
+  saveLocalPosts(posts);
+
+  if (isSupabaseConfigured) {
+    try {
+      await supabase.from('post_views').insert([{
+        post_id: postId,
+        viewer_ip: 'client-ip',
+      }]);
+      await supabase
+        .from('posts')
+        .update({ views: posts[index].views })
+        .eq('id', postId);
+    } catch (e6) {
+      // Ignore
+    }
+  }
+  return posts[index].views;
+}
+
+// =========================================================================
+// REAL-TIME KOMENTAR & MODERASI ADMIN
+// =========================================================================
 export function getCommentsForPost(postId) {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(LOCAL_COMMENTS_KEY);
     const allComments = raw ? JSON.parse(raw) : [];
-    return allComments.filter((c) => c.postId === postId);
-  } catch (e5) {
+    return allComments.filter((c) => c.postId === postId && (c.status === undefined || c.status === 'approved'));
+  } catch (e7) {
     return [];
   }
 }
 
-export function saveComment(comment) {
-  if (typeof window === 'undefined') return [comment];
+export function getAllCommentsForAdmin() {
+  if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(LOCAL_COMMENTS_KEY);
-    const allComments = raw ? JSON.parse(raw) : [];
-    const updated = [comment, ...allComments];
-    localStorage.setItem(LOCAL_COMMENTS_KEY, JSON.stringify(updated));
-    return updated.filter((c) => c.postId === comment.postId);
-  } catch (e6) {
-    return [comment];
+    return raw ? JSON.parse(raw) : [];
+  } catch (e8) {
+    return [];
   }
+}
+
+export async function saveComment(comment) {
+  const newComment = {
+    ...comment,
+    status: 'approved', // Langsung aktif atau bisa di-hold admin
+    likes: 0,
+  };
+
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_COMMENTS_KEY);
+      const allComments = raw ? JSON.parse(raw) : [];
+      const updated = [newComment, ...allComments];
+      localStorage.setItem(LOCAL_COMMENTS_KEY, JSON.stringify(updated));
+    } catch (e9) {}
+  }
+
+  // Auto-tambah notifikasi komentar baru ke Admin & Pembaca
+  addNotification({
+    type: 'comment',
+    title: `Komentar Baru dari ${newComment.authorName}`,
+    message: `"${newComment.content.slice(0, 70)}..."`,
+    postId: newComment.postId,
+    authorName: newComment.authorName,
+  });
+
+  if (isSupabaseConfigured) {
+    try {
+      await supabase.from('comments').insert([{
+        id: newComment.id,
+        post_id: newComment.postId,
+        author_name: newComment.authorName,
+        author_email: newComment.authorEmail,
+        content: newComment.content,
+        status: newComment.status,
+      }]);
+    } catch (err) {
+      console.warn('Supabase comment insert notice:', err);
+    }
+  }
+
+  return getCommentsForPost(comment.postId);
+}
+
+export async function updateCommentStatus(commentId, status) {
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_COMMENTS_KEY);
+      if (raw) {
+        const list = JSON.parse(raw);
+        const idx = list.findIndex((c) => c.id === commentId);
+        if (idx !== -1) {
+          list[idx].status = status;
+          localStorage.setItem(LOCAL_COMMENTS_KEY, JSON.stringify(list));
+        }
+      }
+    } catch (e10) {}
+  }
+
+  if (isSupabaseConfigured) {
+    try {
+      await supabase.from('comments').update({ status }).eq('id', commentId);
+    } catch (e11) {}
+  }
+  return true;
+}
+
+export async function deleteComment(commentId) {
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_COMMENTS_KEY);
+      if (raw) {
+        const list = JSON.parse(raw);
+        const filtered = list.filter((c) => c.id !== commentId);
+        localStorage.setItem(LOCAL_COMMENTS_KEY, JSON.stringify(filtered));
+      }
+    } catch (e12) {}
+  }
+
+  if (isSupabaseConfigured) {
+    try {
+      await supabase.from('comments').delete().eq('id', commentId);
+    } catch (e13) {}
+  }
+  return true;
 }
 
 // =========================================================================
@@ -288,7 +529,7 @@ export async function getVerifiedAuthors() {
         return JSON.parse(stored);
       }
       localStorage.setItem(LOCAL_AUTHORS_KEY, JSON.stringify(defaultVerifiedAuthors));
-    } catch (e7) {
+    } catch (e14) {
       // fallback
     }
   }
@@ -399,7 +640,7 @@ export async function updateAuthorProfile(updatedData) {
           kta_number: merged.ktaNumber,
         },
       ]);
-    } catch (e8) {
+    } catch (e15) {
       // ignore
     }
   }
@@ -420,7 +661,7 @@ export async function checkAuthorVerification(email) {
         .eq('verified', true)
         .single();
       if (!error && data) return data ;
-    } catch (e9) {
+    } catch (e16) {
       // fallback
     }
   }
@@ -428,5 +669,213 @@ export async function checkAuthorVerification(email) {
   const authors = await getVerifiedAuthors();
   const found = authors.find((a) => a.email.toLowerCase() === cleanEmail && a.verified);
   return found || null;
+}
+
+// =========================================================================
+// FITUR PENDAFTARAN CALON AUTHOR (BECOME AN AUTHOR) KE SUPABASE
+// =========================================================================
+
+// Contoh data pendaftar awal untuk demo
+const defaultApplications = [
+  {
+    id: 'app-demo-1',
+    name: 'Dr. Hendra Gunawan, S.H., M.Hum.',
+    email: 'hendra.gunawan@ui.ac.id',
+    phone: '081299887766',
+    expertise: 'Hukum Hak Asasi Manusia & Sejarah Peradilan 1998',
+    institution: 'Fakultas Hukum Universitas Indonesia',
+    bioReason: 'Fokus meneliti arsip investigasi Komnas HAM mengenai Peristiwa Trisakti dan Semanggi I-II serta transparansi reformasi sektor keamanan.',
+    portfolioUrl: 'https://scholar.google.com',
+    verificationPhoto: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+    status: 'pending',
+    createdAt: 'Hari ini, 10:15 WIB',
+  }
+];
+
+export async function getAuthorApplications() {
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('author_applications')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        return data.map((d) => ({
+          id: d.id,
+          name: d.name,
+          email: d.email,
+          phone: d.phone,
+          expertise: d.expertise,
+          institution: d.institution,
+          bioReason: d.bio_reason || d.bioReason,
+          portfolioUrl: d.portfolio_url || d.portfolioUrl,
+          verificationPhoto: d.verification_photo || d.verificationPhoto,
+          status: d.status,
+          notes: d.notes,
+          createdAt: d.created_at || d.createdAt,
+          reviewedAt: d.reviewed_at,
+          reviewedBy: d.reviewed_by,
+        }));
+      }
+    } catch (err) {
+      console.warn('Gagal membaca author_applications dari Supabase:', err);
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_APPLICATIONS_KEY);
+      if (raw) return JSON.parse(raw);
+      localStorage.setItem(LOCAL_APPLICATIONS_KEY, JSON.stringify(defaultApplications));
+      return defaultApplications;
+    } catch (e17) {}
+  }
+  return defaultApplications;
+}
+
+export async function submitAuthorApplication(
+  appData
+) {
+  const newApp = {
+    ...appData,
+    id: 'app-' + Date.now(),
+    status: 'pending',
+    createdAt: new Date().toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }) + ' WIB',
+  };
+
+  // 1. Simpan ke database Supabase
+  if (isSupabaseConfigured) {
+    try {
+      await supabase.from('author_applications').insert([{
+        id: newApp.id,
+        name: newApp.name,
+        email: newApp.email.toLowerCase().trim(),
+        phone: newApp.phone,
+        expertise: newApp.expertise,
+        institution: newApp.institution,
+        bio_reason: newApp.bioReason,
+        portfolio_url: newApp.portfolioUrl || '',
+        verification_photo: newApp.verificationPhoto,
+        status: 'pending',
+      }]);
+    } catch (err) {
+      console.warn('Supabase application insert note:', err);
+    }
+  }
+
+  // 2. Simpan lokal
+  if (typeof window !== 'undefined') {
+    try {
+      const current = await getAuthorApplications();
+      const updated = [newApp, ...current];
+      localStorage.setItem(LOCAL_APPLICATIONS_KEY, JSON.stringify(updated));
+    } catch (e18) {}
+  }
+
+  // 3. Picu notifikasi realtime untuk Admin Redaksi
+  addNotification({
+    type: 'author_application',
+    title: 'Pendaftaran Calon Author Baru',
+    message: `${newApp.name} (${newApp.institution}) mengajukan pendaftaran sebagai Author Hukum & Politik. Segera konfirmasi di Portal Admin.`,
+    authorName: newApp.name,
+    avatar: newApp.verificationPhoto,
+  });
+
+  return newApp;
+}
+
+export async function updateAuthorApplicationStatus(
+  appId,
+  newStatus,
+  adminNotes
+) {
+  const applications = await getAuthorApplications();
+  const idx = applications.findIndex((a) => a.id === appId);
+  if (idx === -1) return false;
+
+  const app = applications[idx];
+  app.status = newStatus;
+  app.notes = adminNotes || (newStatus === 'approved' ? 'Telah disetujui & diverifikasi resmi' : 'Belum memenuhi kriteria');
+  app.reviewedAt = new Date().toISOString();
+  app.reviewedBy = 'Admin Redaksi Facrial';
+
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_APPLICATIONS_KEY, JSON.stringify(applications));
+    } catch (e19) {}
+  }
+
+  // JIKA DISETUJUI, OTOMATIS TAMBAHKAN KE DAFTAR AUTHOR TERVERIFIKASI RESMI DI SUPABASE!
+  if (newStatus === 'approved') {
+    const newAuthor = {
+      id: 'auth-' + app.id,
+      email: app.email.toLowerCase().trim(),
+      name: app.name,
+      role: `Peneliti & Author Resmi (${app.expertise})`,
+      verified: true,
+      verifiedBy: 'Fachrial (Admin Redaksi)',
+      verifiedAt: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
+      articlesCount: 0,
+      status: 'Aktif',
+      avatar: app.verificationPhoto,
+      coverPhoto: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1600&q=80',
+      bio: app.bioReason,
+      workplace: app.institution,
+      education: app.expertise,
+      ktaNumber: `KTA-AUTH-${Date.now().toString().slice(-4)}/RED/2026`,
+      phone: app.phone,
+      socials: { email: app.email },
+    };
+    await verifyAndSaveAuthor(newAuthor);
+
+    // Kirim notifikasi sistem
+    addNotification({
+      type: 'approval',
+      title: 'Author Resmi Baru Telah Disetujui',
+      message: `${app.name} telah disetujui sebagai Author resmi dan dapat login di /author untuk mulai menulis.`,
+      authorName: app.name,
+      avatar: app.verificationPhoto,
+    });
+  }
+
+  if (isSupabaseConfigured) {
+    try {
+      await supabase
+        .from('author_applications')
+        .update({
+          status: newStatus,
+          notes: app.notes,
+          reviewed_at: app.reviewedAt,
+          reviewed_by: app.reviewedBy,
+        })
+        .eq('id', appId);
+    } catch (e20) {}
+  }
+
+  return true;
+}
+
+export async function deleteAuthorApplication(appId) {
+  const applications = await getAuthorApplications();
+  const filtered = applications.filter((a) => a.id !== appId);
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_APPLICATIONS_KEY, JSON.stringify(filtered));
+    } catch (e21) {}
+  }
+
+  if (isSupabaseConfigured) {
+    try {
+      await supabase.from('author_applications').delete().eq('id', appId);
+    } catch (e22) {}
+  }
+  return true;
 }
 
