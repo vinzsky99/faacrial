@@ -3,7 +3,7 @@
 import { initialPosts } from '../data/initialData';
 import { addNotification } from './notifications';
 
-// Membaca URL dan Anon Key dari env (kompatibel Vite import.meta.env dan Next.js process.env)
+// Membaca URL dan Anon Key dari env
 const envUrl = 
   (typeof import.meta !== 'undefined' && _optionalChain([import.meta, 'access', _ => _.env, 'optionalAccess', _2 => _2.VITE_SUPABASE_URL])) ||
   (typeof process !== 'undefined' && _optionalChain([process, 'access', _3 => _3.env, 'optionalAccess', _4 => _4.NEXT_PUBLIC_SUPABASE_URL])) ||
@@ -16,23 +16,20 @@ const envKey =
 
 export const isSupabaseConfigured = Boolean(envUrl && envKey && !envUrl.includes('your-project-id'));
 
-// Inisialisasi Supabase Client yang selalu siap digunakan (Safe fallback client untuk preview tanpa crash)
+// Inisialisasi Supabase Client
 export const supabase = isSupabaseConfigured
   ? createClient(envUrl, envKey)
   : createClient('https://facrial-hukum-politik.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy');
 
-// Local fallback state management agar demo aplikasi berjalan seketika (Zero-Setup Preview)
 const LOCAL_STORAGE_KEY = 'facrial_posts_hukum_politik_v5';
 const LOCAL_COMMENTS_KEY = 'facrial_comments_v2';
 const LOCAL_AUTHORS_KEY = 'facrial_verified_authors_v5';
 const LOCAL_APPLICATIONS_KEY = 'facrial_author_applications_v1';
-const LOCAL_LOVED_POSTS_KEY = 'facrial_user_loved_posts_v1';
 
 const syncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
   ? new BroadcastChannel('facrial_realtime_sync')
   : null;
 
-// Daftar author terverifikasi awal (Hukum & Politik Indonesia) dengan Profil Lengkap ala Facebook
 export const defaultVerifiedAuthors = [
   {
     id: 'auth-1',
@@ -51,6 +48,7 @@ export const defaultVerifiedAuthors = [
     workplace: 'Lembaga Kajian Hukum Tata Negara & Redaksi Facrial',
     education: 'Magister Hukum Tata Negara (M.H.), Universitas Indonesia',
     ktaNumber: 'KTA-RED-001/JKT/2026',
+    phone: '08123456789',
     socials: {
       instagram: 'https://instagram.com/fachrial',
       facebook: 'https://facebook.com/fachrial.official',
@@ -75,6 +73,7 @@ export const defaultVerifiedAuthors = [
     workplace: 'Pusat Dokumentasi HAM & Reformasi',
     education: 'Kolektif Akademisi & Advokat Hak Asasi Manusia',
     ktaNumber: 'KTA-INV-002/HAM/2026',
+    phone: '08129876543',
     socials: {
       instagram: 'https://instagram.com/fachrial',
       facebook: 'https://facebook.com/fachrial.official',
@@ -99,6 +98,7 @@ export const defaultVerifiedAuthors = [
     workplace: 'Fakultas Hukum Universitas Padjadjaran',
     education: 'Doktor Ilmu Hukum Pidana (Dr. S.H.)',
     ktaNumber: 'KTA-AKD-003/PID/2026',
+    phone: '08134567890',
     socials: {
       instagram: 'https://instagram.com/fachrial',
       facebook: 'https://facebook.com/fachrial.official',
@@ -108,7 +108,6 @@ export const defaultVerifiedAuthors = [
   },
 ];
 
-// Helper membaca post tersimpan (dengan pembersihan tuntas jika ada sampah cache berita IT lama)
 export function getLocalPosts() {
   if (typeof window === 'undefined') return initialPosts;
   try {
@@ -147,7 +146,6 @@ export function getLocalPosts() {
   }
 }
 
-// Helper menyimpan post
 export function saveLocalPosts(posts) {
   if (typeof window === 'undefined') return;
   try {
@@ -160,7 +158,6 @@ export function saveLocalPosts(posts) {
   }
 }
 
-// Mengambil seluruh postingan untuk publik (hanya yang berstatus 'approved' atau yang belum memiliki flag status)
 export async function fetchAllPosts() {
   if (isSupabaseConfigured) {
     try {
@@ -179,7 +176,6 @@ export async function fetchAllPosts() {
   return local.filter((p) => !p.status || p.status === 'approved');
 }
 
-// Mengambil seluruh postingan untuk Admin (termasuk pending dan rejected)
 export async function getAllPostsForAdmin() {
   if (isSupabaseConfigured) {
     try {
@@ -189,14 +185,11 @@ export async function getAllPostsForAdmin() {
         .order('date', { ascending: false });
 
       if (!error && data) return data ;
-    } catch (e3) {
-      // fallback to local
-    }
+    } catch (e3) {}
   }
   return getLocalPosts();
 }
 
-// Update status persetujuan postingan (Approve / Reject oleh Admin)
 export async function updatePostApprovalStatus(
   postId,
   newStatus
@@ -232,7 +225,6 @@ export async function updatePostApprovalStatus(
   return true;
 }
 
-// Hapus postingan secara permanen oleh Admin
 export async function deletePostPermanently(postId) {
   const posts = getLocalPosts();
   const filtered = posts.filter((p) => p.id !== postId);
@@ -249,7 +241,6 @@ export async function deletePostPermanently(postId) {
   return true;
 }
 
-// Mengambil postingan berdasarkan slug
 export async function fetchPostBySlug(slug) {
   if (isSupabaseConfigured) {
     try {
@@ -259,15 +250,12 @@ export async function fetchPostBySlug(slug) {
         .eq('slug', slug)
         .single();
       if (!error && data) return data ;
-    } catch (e4) {
-      // Fallback
-    }
+    } catch (e4) {}
   }
   const local = getLocalPosts();
   return local.find((p) => p.slug === slug) || null;
 }
 
-// Membuat postingan / agenda baru
 export async function insertPost(newPost, postedByRole = 'admin') {
   const postToSave = {
     ...newPost,
@@ -313,9 +301,6 @@ export async function insertPost(newPost, postedByRole = 'admin') {
   return true;
 }
 
-// =========================================================================
-// REAL-TIME LOVE / SUKA (HATI) DENGAN DATABASE SUPABASE
-// =========================================================================
 export async function incrementPostLove(postId, userIdentifier = 'guest-user') {
   const posts = getLocalPosts();
   const index = posts.findIndex((p) => p.id === postId);
@@ -344,18 +329,13 @@ export async function incrementPostLove(postId, userIdentifier = 'guest-user') {
         .from('posts')
         .update({ loves: posts[index].likes, likes: posts[index].likes })
         .eq('id', postId);
-    } catch (e5) {
-      // Ignore
-    }
+    } catch (e5) {}
   }
   return posts[index].likes;
 }
 
 export const incrementPostLike = incrementPostLove;
 
-// =========================================================================
-// REAL-TIME DILIHAT / VIEWS COUNTER
-// =========================================================================
 export async function incrementPostView(postId) {
   const posts = getLocalPosts();
   const index = posts.findIndex((p) => p.id === postId);
@@ -374,16 +354,11 @@ export async function incrementPostView(postId) {
         .from('posts')
         .update({ views: posts[index].views })
         .eq('id', postId);
-    } catch (e6) {
-      // Ignore
-    }
+    } catch (e6) {}
   }
   return posts[index].views;
 }
 
-// =========================================================================
-// REAL-TIME KOMENTAR & MODERASI ADMIN
-// =========================================================================
 export function getCommentsForPost(postId) {
   if (typeof window === 'undefined') return [];
   try {
@@ -490,10 +465,6 @@ export async function deleteComment(commentId) {
   return true;
 }
 
-// =========================================================================
-// FITUR AUTHOR VERIFIKASI EMAIL KE DATABASE SUPABASE OTOMATIS
-// =========================================================================
-
 export async function getVerifiedAuthors() {
   if (isSupabaseConfigured) {
     try {
@@ -517,9 +488,7 @@ export async function getVerifiedAuthors() {
         return JSON.parse(stored);
       }
       localStorage.setItem(LOCAL_AUTHORS_KEY, JSON.stringify(defaultVerifiedAuthors));
-    } catch (e14) {
-      // fallback
-    }
+    } catch (e14) {}
   }
   return defaultVerifiedAuthors;
 }
@@ -624,9 +593,7 @@ export async function updateAuthorProfile(updatedData) {
           kta_number: merged.ktaNumber,
         },
       ]);
-    } catch (e15) {
-      // ignore
-    }
+    } catch (e15) {}
   }
 
   return merged;
@@ -644,19 +611,13 @@ export async function checkAuthorVerification(email) {
         .eq('verified', true)
         .single();
       if (!error && data) return data ;
-    } catch (e16) {
-      // fallback
-    }
+    } catch (e16) {}
   }
 
   const authors = await getVerifiedAuthors();
   const found = authors.find((a) => a.email.toLowerCase() === cleanEmail && a.verified);
   return found || null;
 }
-
-// =========================================================================
-// FITUR PENDAFTARAN CALON AUTHOR (BECOME AN AUTHOR) KE SUPABASE
-// =========================================================================
 
 const defaultApplications = [
   {
@@ -791,7 +752,6 @@ export async function updateAuthorApplicationStatus(
     } catch (e19) {}
   }
 
-  // JIKA DISETUJUI, OTOMATIS TAMBAHKAN KE DAFTAR AUTHOR TERVERIFIKASI RESMI DI SUPABASE!
   if (newStatus === 'approved') {
     const newAuthor = {
       id: 'auth-' + app.id,
@@ -809,19 +769,17 @@ export async function updateAuthorApplicationStatus(
       workplace: app.institution,
       education: app.expertise,
       ktaNumber: `KTA-AUTH-${Date.now().toString().slice(-4)}/RED/2026`,
+      phone: app.phone,
       socials: {
         email: app.email,
         instagram: '',
         facebook: '',
         linkedin: '',
         website: '',
-        ...((app ).socials || {}),
-      } ,
-    } ;
-
+      },
+    };
     await verifyAndSaveAuthor(newAuthor);
 
-    // Kirim notifikasi sistem
     addNotification({
       type: 'approval',
       title: 'Author Resmi Baru Telah Disetujui',
@@ -864,3 +822,5 @@ export async function deleteAuthorApplication(appId) {
   }
   return true;
 }
+
+export default supabase;

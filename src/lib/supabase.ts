@@ -3,7 +3,7 @@ import { Post, Comment, VerifiedAuthor, AuthorApplication } from '../types';
 import { initialPosts } from '../data/initialData';
 import { addNotification } from './notifications';
 
-// Membaca URL dan Anon Key dari env (kompatibel Vite import.meta.env dan Next.js process.env)
+// Membaca URL dan Anon Key dari env
 const envUrl = 
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
   (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SUPABASE_URL) ||
@@ -16,23 +16,20 @@ const envKey =
 
 export const isSupabaseConfigured = Boolean(envUrl && envKey && !envUrl.includes('your-project-id'));
 
-// Inisialisasi Supabase Client yang selalu siap digunakan (Safe fallback client untuk preview tanpa crash)
+// Inisialisasi Supabase Client
 export const supabase: SupabaseClient = isSupabaseConfigured
   ? createClient(envUrl, envKey)
   : createClient('https://facrial-hukum-politik.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy');
 
-// Local fallback state management agar demo aplikasi berjalan seketika (Zero-Setup Preview)
 const LOCAL_STORAGE_KEY = 'facrial_posts_hukum_politik_v5';
 const LOCAL_COMMENTS_KEY = 'facrial_comments_v2';
 const LOCAL_AUTHORS_KEY = 'facrial_verified_authors_v5';
 const LOCAL_APPLICATIONS_KEY = 'facrial_author_applications_v1';
-const LOCAL_LOVED_POSTS_KEY = 'facrial_user_loved_posts_v1';
 
 const syncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
   ? new BroadcastChannel('facrial_realtime_sync')
   : null;
 
-// Daftar author terverifikasi awal (Hukum & Politik Indonesia) dengan Profil Lengkap ala Facebook
 export const defaultVerifiedAuthors: VerifiedAuthor[] = [
   {
     id: 'auth-1',
@@ -51,6 +48,7 @@ export const defaultVerifiedAuthors: VerifiedAuthor[] = [
     workplace: 'Lembaga Kajian Hukum Tata Negara & Redaksi Facrial',
     education: 'Magister Hukum Tata Negara (M.H.), Universitas Indonesia',
     ktaNumber: 'KTA-RED-001/JKT/2026',
+    phone: '08123456789',
     socials: {
       instagram: 'https://instagram.com/fachrial',
       facebook: 'https://facebook.com/fachrial.official',
@@ -75,6 +73,7 @@ export const defaultVerifiedAuthors: VerifiedAuthor[] = [
     workplace: 'Pusat Dokumentasi HAM & Reformasi',
     education: 'Kolektif Akademisi & Advokat Hak Asasi Manusia',
     ktaNumber: 'KTA-INV-002/HAM/2026',
+    phone: '08129876543',
     socials: {
       instagram: 'https://instagram.com/fachrial',
       facebook: 'https://facebook.com/fachrial.official',
@@ -99,6 +98,7 @@ export const defaultVerifiedAuthors: VerifiedAuthor[] = [
     workplace: 'Fakultas Hukum Universitas Padjadjaran',
     education: 'Doktor Ilmu Hukum Pidana (Dr. S.H.)',
     ktaNumber: 'KTA-AKD-003/PID/2026',
+    phone: '08134567890',
     socials: {
       instagram: 'https://instagram.com/fachrial',
       facebook: 'https://facebook.com/fachrial.official',
@@ -108,7 +108,6 @@ export const defaultVerifiedAuthors: VerifiedAuthor[] = [
   },
 ];
 
-// Helper membaca post tersimpan (dengan pembersihan tuntas jika ada sampah cache berita IT lama)
 export function getLocalPosts(): Post[] {
   if (typeof window === 'undefined') return initialPosts;
   try {
@@ -147,7 +146,6 @@ export function getLocalPosts(): Post[] {
   }
 }
 
-// Helper menyimpan post
 export function saveLocalPosts(posts: Post[]) {
   if (typeof window === 'undefined') return;
   try {
@@ -160,7 +158,6 @@ export function saveLocalPosts(posts: Post[]) {
   }
 }
 
-// Mengambil seluruh postingan untuk publik (hanya yang berstatus 'approved' atau yang belum memiliki flag status)
 export async function fetchAllPosts(): Promise<Post[]> {
   if (isSupabaseConfigured) {
     try {
@@ -179,7 +176,6 @@ export async function fetchAllPosts(): Promise<Post[]> {
   return local.filter((p) => !p.status || p.status === 'approved');
 }
 
-// Mengambil seluruh postingan untuk Admin (termasuk pending dan rejected)
 export async function getAllPostsForAdmin(): Promise<Post[]> {
   if (isSupabaseConfigured) {
     try {
@@ -189,14 +185,11 @@ export async function getAllPostsForAdmin(): Promise<Post[]> {
         .order('date', { ascending: false });
 
       if (!error && data) return data as Post[];
-    } catch {
-      // fallback to local
-    }
+    } catch {}
   }
   return getLocalPosts();
 }
 
-// Update status persetujuan postingan (Approve / Reject oleh Admin)
 export async function updatePostApprovalStatus(
   postId: string,
   newStatus: 'approved' | 'rejected'
@@ -232,7 +225,6 @@ export async function updatePostApprovalStatus(
   return true;
 }
 
-// Hapus postingan secara permanen oleh Admin
 export async function deletePostPermanently(postId: string): Promise<boolean> {
   const posts = getLocalPosts();
   const filtered = posts.filter((p) => p.id !== postId);
@@ -249,7 +241,6 @@ export async function deletePostPermanently(postId: string): Promise<boolean> {
   return true;
 }
 
-// Mengambil postingan berdasarkan slug
 export async function fetchPostBySlug(slug: string): Promise<Post | null> {
   if (isSupabaseConfigured) {
     try {
@@ -259,15 +250,12 @@ export async function fetchPostBySlug(slug: string): Promise<Post | null> {
         .eq('slug', slug)
         .single();
       if (!error && data) return data as Post;
-    } catch {
-      // Fallback
-    }
+    } catch {}
   }
   const local = getLocalPosts();
   return local.find((p) => p.slug === slug) || null;
 }
 
-// Membuat postingan / agenda baru
 export async function insertPost(newPost: Post, postedByRole: 'admin' | 'author' = 'admin'): Promise<boolean> {
   const postToSave: Post = {
     ...newPost,
@@ -313,9 +301,6 @@ export async function insertPost(newPost: Post, postedByRole: 'admin' | 'author'
   return true;
 }
 
-// =========================================================================
-// REAL-TIME LOVE / SUKA (HATI) DENGAN DATABASE SUPABASE
-// =========================================================================
 export async function incrementPostLove(postId: string, userIdentifier: string = 'guest-user'): Promise<number> {
   const posts = getLocalPosts();
   const index = posts.findIndex((p) => p.id === postId);
@@ -344,18 +329,13 @@ export async function incrementPostLove(postId: string, userIdentifier: string =
         .from('posts')
         .update({ loves: posts[index].likes, likes: posts[index].likes })
         .eq('id', postId);
-    } catch {
-      // Ignore
-    }
+    } catch {}
   }
   return posts[index].likes;
 }
 
 export const incrementPostLike = incrementPostLove;
 
-// =========================================================================
-// REAL-TIME DILIHAT / VIEWS COUNTER
-// =========================================================================
 export async function incrementPostView(postId: string): Promise<number> {
   const posts = getLocalPosts();
   const index = posts.findIndex((p) => p.id === postId);
@@ -374,16 +354,11 @@ export async function incrementPostView(postId: string): Promise<number> {
         .from('posts')
         .update({ views: posts[index].views })
         .eq('id', postId);
-    } catch {
-      // Ignore
-    }
+    } catch {}
   }
   return posts[index].views;
 }
 
-// =========================================================================
-// REAL-TIME KOMENTAR & MODERASI ADMIN
-// =========================================================================
 export function getCommentsForPost(postId: string): Comment[] {
   if (typeof window === 'undefined') return [];
   try {
@@ -490,10 +465,6 @@ export async function deleteComment(commentId: string): Promise<boolean> {
   return true;
 }
 
-// =========================================================================
-// FITUR AUTHOR VERIFIKASI EMAIL KE DATABASE SUPABASE OTOMATIS
-// =========================================================================
-
 export async function getVerifiedAuthors(): Promise<VerifiedAuthor[]> {
   if (isSupabaseConfigured) {
     try {
@@ -517,9 +488,7 @@ export async function getVerifiedAuthors(): Promise<VerifiedAuthor[]> {
         return JSON.parse(stored);
       }
       localStorage.setItem(LOCAL_AUTHORS_KEY, JSON.stringify(defaultVerifiedAuthors));
-    } catch {
-      // fallback
-    }
+    } catch {}
   }
   return defaultVerifiedAuthors;
 }
@@ -624,9 +593,7 @@ export async function updateAuthorProfile(updatedData: Partial<VerifiedAuthor> &
           kta_number: merged.ktaNumber,
         },
       ]);
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
   return merged;
@@ -644,19 +611,13 @@ export async function checkAuthorVerification(email: string): Promise<VerifiedAu
         .eq('verified', true)
         .single();
       if (!error && data) return data as VerifiedAuthor;
-    } catch {
-      // fallback
-    }
+    } catch {}
   }
 
   const authors = await getVerifiedAuthors();
   const found = authors.find((a) => a.email.toLowerCase() === cleanEmail && a.verified);
   return found || null;
 }
-
-// =========================================================================
-// FITUR PENDAFTARAN CALON AUTHOR (BECOME AN AUTHOR) KE SUPABASE
-// =========================================================================
 
 const defaultApplications: AuthorApplication[] = [
   {
@@ -791,7 +752,6 @@ export async function updateAuthorApplicationStatus(
     } catch {}
   }
 
-  // JIKA DISETUJUI, OTOMATIS TAMBAHKAN KE DAFTAR AUTHOR TERVERIFIKASI RESMI DI SUPABASE!
   if (newStatus === 'approved') {
     const newAuthor: VerifiedAuthor = {
       id: 'auth-' + app.id,
@@ -809,19 +769,17 @@ export async function updateAuthorApplicationStatus(
       workplace: app.institution,
       education: app.expertise,
       ktaNumber: `KTA-AUTH-${Date.now().toString().slice(-4)}/RED/2026`,
+      phone: app.phone,
       socials: {
         email: app.email,
         instagram: '',
         facebook: '',
         linkedin: '',
         website: '',
-        ...((app as any).socials || {}),
-      } as any,
-    } as any;
-
+      },
+    };
     await verifyAndSaveAuthor(newAuthor);
 
-    // Kirim notifikasi sistem
     addNotification({
       type: 'approval',
       title: 'Author Resmi Baru Telah Disetujui',
@@ -864,3 +822,5 @@ export async function deleteAuthorApplication(appId: string): Promise<boolean> {
   }
   return true;
 }
+
+export default supabase;

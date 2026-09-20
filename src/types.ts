@@ -1,24 +1,61 @@
-export type ThemeMode = 'light' | 'dark';
+export interface PostAuthor {
+  name: string;
+  avatar: string;
+  role?: string;
+  verified?: boolean;
+}
 
-export interface Author {
+export interface PostAgenda {
+  eventDate?: string;
+  eventTime?: string;
+  location?: string;
+  status?: string;
+  registrationUrl?: string;
+}
+
+export interface PostAttachment {
   id: string;
   name: string;
-  role: string;
-  avatar: string;
-  coverPhoto?: string;
-  bio: string;
-  verified: boolean;
-  city?: string;
-  workplace?: string;
-  education?: string;
-  ktaNumber?: string;
-  socials: {
-    instagram: string;
-    facebook?: string;
-    linkedin: string;
-    email: string;
-    github?: string;
-  };
+  url: string;
+  size?: string;
+  type?: string;
+}
+
+export interface Post {
+  id: string;
+  title: string;
+  slug: string;
+  excerpt: string;
+  content: string;
+  coverImage?: string;
+  images?: string[];
+  category: string;
+  date: string;
+  formattedDate?: string;
+  dayName?: string;
+  time?: string;
+  readTime?: string;
+  author: PostAuthor;
+  likes: number;
+  loves?: number;
+  views?: number;
+  commentsCount?: number;
+  isAgenda?: boolean;
+  agenda?: PostAgenda;
+  attachments?: PostAttachment[];
+  tags?: string[];
+  status?: 'approved' | 'pending_approval' | 'rejected';
+}
+
+export interface Comment {
+  id: string;
+  postId: string;
+  authorName: string;
+  authorEmail?: string;
+  content: string;
+  createdAt: string;
+  likes?: number;
+  status?: 'approved' | 'hidden';
 }
 
 export interface VerifiedAuthor {
@@ -27,10 +64,10 @@ export interface VerifiedAuthor {
   name: string;
   role: string;
   verified: boolean;
-  verifiedBy: string; // e.g. 'Admin Redaksi Facrial'
-  verifiedAt: string;
-  articlesCount: number;
-  status: 'Aktif' | 'Menunggu Verifikasi' | 'Nonaktif';
+  verifiedBy?: string;
+  verifiedAt?: string;
+  articlesCount?: number;
+  status?: 'Aktif' | 'Nonaktif' | 'Suspended';
   avatar?: string;
   coverPhoto?: string;
   bio?: string;
@@ -38,57 +75,14 @@ export interface VerifiedAuthor {
   workplace?: string;
   education?: string;
   ktaNumber?: string;
+  phone?: string;
   socials?: {
-    instagram: string;
+    instagram?: string;
     facebook?: string;
-    linkedin: string;
-    email: string;
-    github?: string;
+    linkedin?: string;
+    email?: string;
+    website?: string;
   };
-}
-
-export interface Attachment {
-  name: string;
-  size: string;
-  type: 'pdf' | 'image' | 'video' | 'document';
-  url: string;
-}
-
-export interface AgendaDetails {
-  eventDate: string; // e.g. "2026-10-15"
-  eventTime: string; // e.g. "09:00 - 12:00 WIB"
-  location: string;
-  status: 'Mendatang' | 'Berlangsung' | 'Selesai';
-  registrationUrl?: string;
-}
-
-export type PostCategory = string;
-
-export interface Post {
-  id: string;
-  slug: string;
-  title: string;
-  content: string;
-  excerpt: string;
-  category: PostCategory;
-  coverImage: string;
-  images: string[]; // For motion slider zoom preview
-  date: string; // ISO date string or formatted
-  dayName: string; // e.g. "Jumat"
-  formattedDate: string; // e.g. "19 September 2026"
-  time: string; // e.g. "09:30 WIB"
-  author: Author;
-  readTime: string;
-  likes: number; // Also represents Loves
-  loves?: number;
-  views: number;
-  commentsCount: number;
-  status?: 'approved' | 'pending_approval' | 'rejected';
-  isAgenda?: boolean;
-  agenda?: AgendaDetails;
-  attachments?: Attachment[];
-  tags: string[];
-  isFeatured?: boolean;
 }
 
 export interface AuthorApplication {
@@ -100,7 +94,7 @@ export interface AuthorApplication {
   institution: string;
   bioReason: string;
   portfolioUrl?: string;
-  verificationPhoto: string; // Base64 or image URL of profile / ID card / KTP
+  verificationPhoto?: string;
   status: 'pending' | 'approved' | 'rejected';
   notes?: string;
   createdAt: string;
@@ -108,37 +102,23 @@ export interface AuthorApplication {
   reviewedBy?: string;
 }
 
-export interface Comment {
+export interface AppNotification {
   id: string;
-  postId: string;
-  authorName: string;
-  authorEmail?: string;
-  content: string;
-  createdAt: string;
-  likes: number; // Loves
-  status?: 'approved' | 'hidden' | 'pending';
-}
-
-export interface NotificationItem {
-  id: string;
-  type: 'love' | 'comment' | 'post' | 'agenda' | 'author_application' | 'approval' | 'security';
+  type: 'post' | 'comment' | 'agenda' | 'author_application' | 'approval' | 'system' | 'love';
   title: string;
   message: string;
-  authorName?: string;
+  read: boolean;
+  createdAt: string;
   postSlug?: string;
   postId?: string;
-  createdAt: string;
-  read: boolean;
+  authorName?: string;
   avatar?: string;
 }
 
-export interface SearchResult {
-  post: Post;
-  matchType: 'title' | 'content' | 'tag' | 'category';
-}
+export type ActiveTab = 'home' | 'timeline' | 'agenda' | 'gallery' | 'authors' | 'admin' | 'notifications';
 
 export interface ThemeConfig {
-  mode: ThemeMode;
-  transparency: number; // 20 to 100 (%)
-  blurBackdrop: boolean;
+  mode: 'light' | 'dark';
+  transparency?: boolean;
+  blurBackground?: boolean;
 }
