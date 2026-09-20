@@ -23,15 +23,6 @@ export const primaryAuthor = {
 
 export const heroSliderItems = [
   {
-    id: 'slider-1',
-    title: 'Menyingkap Tabir Fakta Tragedi Trisakti 12 Mei 1998: Rekonstruksi Peristiwa, Peluru Tajam, dan Janji Keadilan yang Tertunda',
-    category: 'Tragedi & HAM',
-    image: 'https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=1200&q=80',
-    date: '19 September 2026',
-    slug: 'fakta-tragedi-trisakti-12-mei-1998',
-    excerpt: 'Investigasi komprehensif atas gugurnya empat martir reformasi Trisakti, temuan balistik peluru tajam militer, serta kesaksian saksi kunci yang membongkar rekayasa kronologi resmi.',
-  },
-  {
     id: 'slider-2',
     title: 'Runtuhnya Tirani Orde Baru 21 Mei 1998: Detik-Detik Bersejarah Pengunduran Diri Soeharto dan Fajar Reformasi Indonesia',
     category: 'Orde Baru',
